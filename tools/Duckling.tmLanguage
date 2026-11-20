@@ -4,7 +4,8 @@
 <dict>
 	<key>fileTypes</key>
 	<array>
-		<string>duck</string>
+		<string>dk</string>
+		<string>dks</string>
 	</array>
 	<key>name</key>
 	<string>Duckling</string>
