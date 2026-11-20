@@ -1,0 +1,5 @@
+import core.builtins.*;
+
+fun main() = {
+    print("Hello, World!\n");
+}
