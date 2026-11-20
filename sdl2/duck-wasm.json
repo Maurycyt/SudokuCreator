@@ -1,0 +1,5 @@
+{
+  "c_sources": ["shim/sdl2_shim.c"],
+  "cflags": ["-sUSE_SDL=2", "-sUSE_SDL_TTF=2"],
+  "link_flags": ["-sUSE_SDL=2", "-sUSE_SDL_TTF=2"]
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Duckling + SDL2 (wasm64)</title>
+  <style>
+    body { margin: 0; background: #111; color: #ccc; font: 14px monospace; display: flex; flex-direction: column; align-items: center; }
+    canvas { margin-top: 16px; background: #000; outline: none; }
+    #status { margin: 8px; }
+    #output { width: 640px; max-width: 95vw; height: 120px; background: #000; color: #8f8; border: 0; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+  <div id="status">loading…</div>
+  <textarea id="output" readonly></textarea>
+  <script>
+    const output = document.getElementById('output');
+    const status = document.getElementById('status');
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      print: (text) => { output.value += text + '\n'; output.scrollTop = output.scrollHeight; console.log(text); },
+      printErr: (text) => { output.value += '[err] ' + text + '\n'; console.error(text); },
+      setStatus: (text) => { status.textContent = text || 'running'; },
+      onExit: (code) => { status.textContent = 'exited with code ' + code; },
+    };
+    window.onerror = () => { status.textContent = 'error, see console'; };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

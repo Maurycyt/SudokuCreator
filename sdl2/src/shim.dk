@@ -1,0 +1,30 @@
+# Pointer-taking wrappers for the SDL2 / SDL2_ttf functions that pass structs by value.
+#
+# Use these instead of the generated functions: they work on both backends.
+# - Native: these Duckling definitions are used; duckc lowers the by-value calls inside them
+#   with the x86_64 C ABI, which is what the system libraries expect.
+# - wasm64 (tools/duck_wasm.py): the same symbols are defined by shim/sdl2_shim.c, compiled by
+#   emcc; the script replaces these definitions with the C ones, because duckc's x86_64 lowering
+#   of by-value structs does not match wasm's C ABI.
+import sdl2.generated.sdl2.*;
+
+extern("C") {
+    fun dk_TTF_RenderUTF8_Blended(font: cptr TTF_Font, text: cptr char, fg: cptr SDL_Color) -> cptr SDL_Surface =
+        TTF_RenderUTF8_Blended(font, text, fg[0]);
+
+    fun dk_TTF_RenderUTF8_Shaded(font: cptr TTF_Font, text: cptr char, fg: cptr SDL_Color, bg: cptr SDL_Color) -> cptr SDL_Surface =
+        TTF_RenderUTF8_Shaded(font, text, fg[0], bg[0]);
+
+    fun dk_TTF_RenderUTF8_Blended_Wrapped(font: cptr TTF_Font, text: cptr char, fg: cptr SDL_Color, wrap_length: u32) -> cptr SDL_Surface =
+        TTF_RenderUTF8_Blended_Wrapped(font, text, fg[0], wrap_length);
+
+    fun dk_SDL_GUIDToString(guid: cptr SDL_GUID, buf: cptr char, size: i32) -> i32 = {
+        SDL_GUIDToString(guid[0], buf, size);
+        return 0i32;
+    }
+
+    fun dk_SDL_GUIDFromString(text: cptr char, out: cptr mut SDL_GUID) -> i32 = {
+        out[0] = SDL_GUIDFromString(text);
+        return 0i32;
+    }
+}

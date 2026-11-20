@@ -1,3 +1,7 @@
 metadata:
   name: SudokuCreator
   version: '1.0.0'
+dependencies:
+  sdl2:
+    source: 
+      path: sdl2

@@ -1,0 +1,7 @@
+metadata:
+  name: sdl2
+  version: '2.32.4'
+  external-libs:
+    # `-2.0` names exist only as shared libraries; plain `SDL2` would pick libSDL2.a (#4140)
+    - SDL2-2.0
+    - SDL2_ttf-2.0

@@ -1,0 +1,4 @@
+# Re-exports the generated SDL2 + SDL2_ttf bindings and the C shim, so `import sdl2.*;` reaches them.
+# The bindings in `generated/` are hardcoded output of duck_c_import (see c_bindings/).
+import sdl2.generated.sdl2.*;
+import sdl2.shim.*;

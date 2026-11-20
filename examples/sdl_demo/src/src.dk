@@ -1,0 +1,56 @@
+import core.builtins.*;
+import sdl2.*;
+import sdl2.generated.layout_check.c_layout_mismatch;
+
+# A square bouncing around a window, until it is closed or Escape is pressed.
+# DEMO_MAX_FRAMES-style cap: `max_frames` <= 0 means run forever (used for the browser).
+fun main() -> i64 = {
+    let mismatch = c_layout_mismatch();
+    if (mismatch != 0i64) { return 100i64 + mismatch; }
+
+    if (SDL_Init(SDL_INIT_VIDEO) != 0i32) { return 1i64; }
+    let title = ptr_from_slice[char]("duckling + SDL2\0") as cptr char;
+    let pos = SDL_WINDOWPOS_CENTERED as i32;
+    let window = SDL_CreateWindow(title, pos, pos, 640i32, 480i32, SDL_WINDOW_SHOWN);
+    if (SDL_GetWindowID(window) == 0u32) { return 2i64; }
+    let renderer = SDL_CreateRenderer(window, 0i32 - 1i32, 0u32);
+
+    var square: SDL_Rect;
+    square.x = 40i32;
+    square.y = 30i32;
+    square.w = 80i32;
+    square.h = 80i32;
+    var dx: i32 = 4i32;
+    var dy: i32 = 3i32;
+
+    var event: SDL_Event;
+    let ev = &event as cptr SDL_Event;
+    var running = true;
+    while (running) {
+        while (SDL_PollEvent(ev) != 0i32) {
+            let kind = SDL_Event_as_type(ev)[0];
+            if (kind == SDL_QUIT) { running = false; }
+            if (kind == SDL_KEYDOWN) {
+                if (SDL_Event_as_key(ev)[0].keysym.sym == SDLK_ESCAPE as i32) { running = false; }
+            }
+        }
+        square.x = square.x + dx;
+        square.y = square.y + dy;
+        if (square.x < 0i32) { dx = 0i32 - dx; }
+        if (square.x > 560i32) { dx = 0i32 - dx; }
+        if (square.y < 0i32) { dy = 0i32 - dy; }
+        if (square.y > 400i32) { dy = 0i32 - dy; }
+
+        let background = SDL_SetRenderDrawColor(renderer, 20u8, 20u8, 40u8, 255u8);
+        let cleared = SDL_RenderClear(renderer);
+        let yellow = SDL_SetRenderDrawColor(renderer, 255u8, 200u8, 0u8, 255u8);
+        let filled = SDL_RenderFillRect(renderer, &square as cptr SDL_Rect);
+        SDL_RenderPresent(renderer);
+        SDL_Delay(16u32);
+    }
+
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0i64;
+}
