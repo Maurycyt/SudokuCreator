@@ -13,9 +13,7 @@ class CandRef { cell: CellCoord; digit: i64; }
 class Step {
 	strategy: String;             # strategy name (set by the solver)
 	text: String;                 # caption below the board
-	units: List[UnitMark];        # what to color
-	cells: List[CellMark];
-	cands: List[CandMark];
+	marks: List[Mark];            # what to color
 	placements: List[CandRef];    # placements (singles only)
 	eliminations: List[CandRef];  # eliminations
 }
@@ -43,9 +41,9 @@ class StepsBuilder {
 		s.text = move text;
 		steps.push(move s);
 	}
-	fun unit(u: i64, role: i64) = { cur().units.push(UnitMark(u, role)); }
-	fun cell(c: CellCoord, role: i64) = { cur().cells.push(CellMark(c, role)); }
-	fun cand(c: CellCoord, d: i64, role: i64) = { cur().cands.push(CandMark(c, d, role)); }
+	fun unit(u: i64, role: i64) = { cur().marks.push(UnitMark(u, role)); }
+	fun cell(c: CellCoord, role: i64) = { cur().marks.push(CellMark(c, role)); }
+	fun cand(c: CellCoord, d: i64, role: i64) = { cur().marks.push(CandMark(c, d, role)); }
 	# Effects: records the move and immediately marks it to be drawn.
 	fun place(c: CellCoord, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
 	fun eliminate(c: CellCoord, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }
