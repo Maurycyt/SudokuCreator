@@ -59,7 +59,7 @@ class App {
 		var app: App;
 		app.canvas = screen;
 		app.examples = example_boards();
-		app.editor = EditorView.create(screen, fonts.large, fonts.medium);
+		app.editor = EditorView.create(screen, fonts.large, fonts.medium, fonts.small);
 		app.dialog = ExampleDialog.create(screen, fonts.large, fonts.medium, &app.examples);
 		app.steps = StepView.create(screen, fonts.large, fonts.medium, fonts.small);
 		app.creator.load(app.examples.at(app.examples.length() - 1).board);

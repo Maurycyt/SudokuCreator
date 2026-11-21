@@ -114,7 +114,7 @@ class StepView {
 			v.legend[role] = canvas.make_text(small, label, rgb(60, 60, 60));
 			role += 1;
 		}
-		v.contradiction_legend = canvas.make_text(small, "cell with no candidates left (contradiction)", rgb(60, 60, 60));
+		v.contradiction_legend = canvas.make_text(small, "no candidates left (contradiction)", rgb(60, 60, 60));
 		v.keys_help = canvas.make_text(small, "←/→ step   Esc editor", HINT);
 		return v;
 	}
@@ -200,7 +200,6 @@ class StepView {
 
 	# The move list, scrolled to keep the current move roughly centered, and the color legend.
 	fun draw_panel(canvas: Canvas, result: ref SolveResult, step_idx: i64) = {
-		let rows: i64 = 22;
 		if (move_lines.length() == 0) {
 			var m = 0;
 			while (m < result.move_start.length()) {
@@ -211,31 +210,33 @@ class StepView {
 		}
 		canvas.text(title, PANEL_X, ORIGIN + 8);
 
+		# Laid out from the bottom up: key hints, the legend above them, the move list in what is left.
+		let keys_y = HEIGHT - 16;
+		let legend_y = keys_y - 20 - (Role.Count + 1) * LEGEND_ROW;
+		let list_y = ORIGIN + 26;
+		let row_h = 18;
+		let rows = ((legend_y - 12 - list_y) / row_h) as i64;
+
 		let current = move_of(result, step_idx);
 		var first = current - rows / 2;
 		if (first > move_lines.length() - rows) { first = move_lines.length() - rows; }
 		if (first < 0) { first = 0; }
 		var i = first;
 		while (i < move_lines.length() and i < first + rows) {
-			let row_y = ORIGIN + 30 + ((i - first) as i32) * 20;
-			if (i == current) { canvas.fill(SELECTION, PANEL_X - 6, row_y, 300, 20); }
-			canvas.text(move_lines.at(i), PANEL_X, row_y + 10);
+			let row_y = list_y + ((i - first) as i32) * row_h;
+			if (i == current) { canvas.fill(SELECTION, PANEL_X - 6, row_y, 300, row_h); }
+			canvas.text(move_lines.at(i), PANEL_X, row_y + row_h / 2);
 			i += 1;
 		}
 
-		var y = ORIGIN + 30 + (rows as i32) * 20 + 20;
+		var y = legend_y;
 		var role = 0;
 		while (role < Role.Count) {
 			draw_legend_entry(canvas, ROLE_COLORS[role], legend[role], y);
-			y += 24;
+			y += LEGEND_ROW;
 			role += 1;
 		}
 		draw_legend_entry(canvas, RED, contradiction_legend, y);
-		canvas.text(keys_help, PANEL_X, y + 40);
+		canvas.text(keys_help, PANEL_X, keys_y);
 	}
-}
-
-fun draw_legend_entry(canvas: Canvas, color: Color, label: Text, y: i32) = {
-	canvas.fill(color, PANEL_X, y, 18, 18);
-	canvas.text(label, PANEL_X + 28, y + 9);
 }

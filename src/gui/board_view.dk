@@ -48,3 +48,11 @@ fun draw_grid(canvas: Canvas) = {
 		line += 1;
 	}
 }
+
+const LEGEND_ROW = 22;  # height of one legend entry
+
+# A color swatch with a label to its right, in the panel.
+fun draw_legend_entry(canvas: Canvas, color: Color, label: Text, y: i32) = {
+	canvas.fill(color, PANEL_X, y, 18, 18);
+	canvas.text(label, PANEL_X + 28, y + 9);
+}
