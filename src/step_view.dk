@@ -30,8 +30,12 @@ fun cand_y(c: i64, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL /
 # Czy krok wpisuje cyfrę w komórkę c (wtedy nie rysujemy tam kandydatów).
 fun is_placed(f: ref Step, c: i64) -> bool = {
 	var i = 0;
-	while (i < f.cells.length()) {
-		if (f.cells.at(i).cell == c and f.cells.at(i).role == Role.Placed) { return true; }
+	while (i < f.marks.length()) {
+		let hit = match (f.marks.at(i)) {
+			case m: CellMark = m.cell == c and m.role == Role.Placed;
+			case _ = false;
+		};
+		if (hit) { return true; }
 		i += 1;
 	}
 	return false;
@@ -42,6 +46,27 @@ fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
 	var m: i64 = 0;
 	while (m + 1 < result.move_start.length() and result.move_start.at(m + 1) <= step_idx) { m += 1; }
 	return m;
+}
+
+# Rysowanie pojedynczych znaczników (wołane z match w StepView.draw).
+fun draw_unit_mark(renderer: cptr SDL_Renderer, m: UnitMark) = {
+	set_role_color(renderer, m.role);
+	var k = 0;
+	while (k < 9) { let c = unit_cell(m.unit, k); fill_rect(renderer, cell_x(c), cell_y(c), CELL, CELL); k += 1; }
+}
+fun draw_cell_mark(renderer: cptr SDL_Renderer, m: CellMark) = {
+	set_role_color(renderer, m.role);
+	fill_rect(renderer, cell_x(m.cell), cell_y(m.cell), CELL, CELL);
+}
+fun draw_cand_mark(renderer: cptr SDL_Renderer, m: CandMark) = {
+	set_role_color(renderer, m.role);
+	fill_rect(renderer, cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
+}
+fun draw_strike(renderer: cptr SDL_Renderer, m: CandMark) = {
+	if (m.role == Role.Eliminated) {
+		set_color(renderer, 200u8, 0u8, 0u8);
+		thick_line(renderer, cand_x(m.cell, m.digit) - 8, cand_y(m.cell, m.digit) + 8, cand_x(m.cell, m.digit) + 8, cand_y(m.cell, m.digit) - 8);
+	}
 }
 
 # Gruba linia = trzy równoległe cienkie.
@@ -174,22 +199,23 @@ class StepView {
 			shown = step_idx;
 		}
 
-		# Tło planszy, potem tła jednostek i komórek wg ról.
+		# Tło planszy, potem tła wg ról: najpierw całe jednostki, potem komórki (na wierzchu).
 		set_color(renderer, 255u8, 255u8, 255u8);
 		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
 		var i = 0;
-		while (i < f.units.length()) {
-			let m = f.units.at(i);
-			set_role_color(renderer, m.role);
-			var k = 0;
-			while (k < 9) { let uc = unit_cell(m.unit, k); fill_rect(renderer, cell_x(uc), cell_y(uc), CELL, CELL); k += 1; }
+		while (i < f.marks.length()) {
+			match (f.marks.at(i)) {
+				case m: UnitMark = draw_unit_mark(renderer, m);
+				case _ = ();
+			};
 			i += 1;
 		}
 		i = 0;
-		while (i < f.cells.length()) {
-			let m = f.cells.at(i);
-			set_role_color(renderer, m.role);
-			fill_rect(renderer, cell_x(m.cell), cell_y(m.cell), CELL, CELL);
+		while (i < f.marks.length()) {
+			match (f.marks.at(i)) {
+				case m: CellMark = draw_cell_mark(renderer, m);
+				case _ = ();
+			};
 			i += 1;
 		}
 
@@ -220,23 +246,19 @@ class StepView {
 			c += 1;
 		}
 		i = 0;
-		while (i < f.cells.length()) {
-			let m = f.cells.at(i);
-			var k = 0;
-			while (m.role == Role.Placed and k < step.placements.length()) {
-				let p = step.placements.at(k);
-				if (p.cell == m.cell) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
-				k += 1;
-			}
+		while (i < step.placements.length()) {
+			let p = step.placements.at(i);
+			if (is_placed(f, p.cell)) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
 			i += 1;
 		}
 
 		# Kandydaci: kolorowe tło znaczników, cyfry, przekreślenia.
 		i = 0;
-		while (i < f.cands.length()) {
-			let m = f.cands.at(i);
-			set_role_color(renderer, m.role);
-			fill_rect(renderer, cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
+		while (i < f.marks.length()) {
+			match (f.marks.at(i)) {
+				case m: CandMark = draw_cand_mark(renderer, m);
+				case _ = ();
+			};
 			i += 1;
 		}
 		c = 0;
@@ -248,13 +270,12 @@ class StepView {
 			}
 			c += 1;
 		}
-		set_color(renderer, 200u8, 0u8, 0u8);
 		i = 0;
-		while (i < f.cands.length()) {
-			let m = f.cands.at(i);
-			if (m.role == Role.Eliminated) {
-				thick_line(renderer, cand_x(m.cell, m.digit) - 8, cand_y(m.cell, m.digit) + 8, cand_x(m.cell, m.digit) + 8, cand_y(m.cell, m.digit) - 8);
-			}
+		while (i < f.marks.length()) {
+			match (f.marks.at(i)) {
+				case m: CandMark = draw_strike(renderer, m);
+				case _ = ();
+			};
 			i += 1;
 		}
 

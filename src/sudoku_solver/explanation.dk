@@ -14,3 +14,6 @@ namespace Role {
 class UnitMark { unit: i64; role: i64; }
 class CellMark { cell: i64; role: i64; }
 class CandMark { cell: i64; digit: i64; role: i64; }
+
+# Jedno kolorowanie: całej jednostki, komórki albo kandydata. GUI rozróżnia je przez match.
+const Mark = UnitMark | CellMark | CandMark;
