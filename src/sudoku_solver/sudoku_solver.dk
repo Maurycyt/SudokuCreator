@@ -1,9 +1,64 @@
+import core.containers.*;
 import src.partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
+import strategies.*;
+import singles.*;
+
+# Rejestr: od najłatwiejszej. Nowa strategia = jedna linia tutaj.
+fun all_strategies() -> List[Strategy] = {
+	var s: List[Strategy];
+	s.push(Strategy("Full House", 1.0, find_full_house));
+	s.push(Strategy("Hidden Single", 1.2, find_hidden_single));
+	s.push(Strategy("Naked Single", 2.3, find_naked_single));
+	return s;
+}
+
+# Wszystkie kroki do pokazania, po kolei. Ruch = jedno użycie strategii = kilka kroków.
+class SolveResult {
+	steps: List[Step];
+	snapshots: List[SolverState];  # snapshots[i] = stan, na którym rysujemy steps[i] (przed ruchem)
+	move_start: List[i64];         # indeks pierwszego kroku każdego ruchu
+	stuck: bool;                   # żadna strategia nic nie znalazła
+}
 
 class SudokuSolver {
 	state: SolverState;
 
 	global fun create(partial: PartialSudoku) =
 		SudokuSolver(SolverState.create(partial));
+
+	fun apply(step: ref Step) = {
+		var k = 0;
+		while (k < step.placements.length()) { let p = step.placements.at(k); state.place(p.cell, p.digit); k += 1; }
+		k = 0;
+		while (k < step.eliminations.length()) { let e = step.eliminations.at(k); state.eliminate(e.cell, e.digit); k += 1; }
+	}
+
+	# Po każdym ruchu wraca do najłatwiejszej strategii (DESIGN.md, rozdz. 7).
+	fun solve() -> SolveResult = {
+		let strategies = all_strategies();
+		var r: SolveResult;
+		while (not state.solved() and not r.stuck) {
+			r.stuck = true;
+			var i = 0;
+			while (i < strategies.length() and r.stuck) {
+				var steps = strategies.at(i).find(&state);
+				if (steps.length() > 0) {
+					r.stuck = false;
+					r.move_start.push(r.steps.length());
+					var k = 0;
+					while (k < steps.length()) {
+						var st = copy steps.at(k);
+						st.strategy = strategies.at(i).name.toString();
+						r.snapshots.push(state);
+						r.steps.push(move st);
+						k += 1;
+					}
+					apply(steps.at(steps.length() - 1));   # efekty z ostatniego kroku
+				}
+				i += 1;
+			}
+		}
+		return r;
+	}
 }

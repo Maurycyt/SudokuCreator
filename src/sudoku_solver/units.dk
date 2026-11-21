@@ -1,0 +1,35 @@
+import core.containers.*;
+
+# Jednostki i notacja (DESIGN.md, rozdz. 3).
+# Komórka 0..80 (row*9 + col), jednostka 0..26 (0-8 wiersze, 9-17 kolumny, 18-26 kwadraty), cyfra 1..9.
+
+fun row_of(c: i64) -> i64 = c / 9;
+fun col_of(c: i64) -> i64 = c % 9;
+fun box_of(c: i64) -> i64 = (c / 27) * 3 + (c % 9) / 3;
+
+# k-ta komórka (0..8) jednostki u.
+fun unit_cell(u: i64, k: i64) -> i64 = {
+	if (u < 9) { return u * 9 + k; }
+	if (u < 18) { return k * 9 + (u - 9); }
+	let b = u - 18;
+	return ((b / 3) * 3 + k / 3) * 9 + (b % 3) * 3 + k % 3;
+}
+
+# Jednostki komórki: which = 0 wiersz, 1 kolumna, 2 kwadrat.
+fun unit_of(c: i64, which: i64) -> i64 = {
+	if (which == 0) { return row_of(c); }
+	if (which == 1) { return 9 + col_of(c); }
+	return 18 + box_of(c);
+}
+
+# Dwie różne komórki we wspólnej jednostce.
+fun sees(a: i64, b: i64) -> bool =
+	a != b and (row_of(a) == row_of(b) or col_of(a) == col_of(b) or box_of(a) == box_of(b));
+
+# r3c5 / r3, c5, b2 (numeracja od 1).
+fun cell_name(c: i64) -> String = f"r{row_of(c) + 1}c{col_of(c) + 1}";
+fun unit_name(u: i64) -> String = {
+	if (u < 9) { return f"r{u + 1}"; }
+	if (u < 18) { return f"c{u - 8}"; }
+	return f"b{u - 17}";
+}

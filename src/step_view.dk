@@ -1,0 +1,269 @@
+import core.builtins.*;
+import core.containers.*;
+import sdl2.*;
+import SudokuCreator.*;
+import src.sudoku_solver.units.*;
+import src.sudoku_solver.solver_state.SolverState;
+import src.sudoku_solver.explanation.*;
+import src.sudoku_solver.strategies.*;
+import src.sudoku_solver.SolveResult;
+
+# Podgląd kroku solvera (DESIGN.md, rozdz. 13): rysuje stan PRZED ruchem + kolorowanie i podpis kroku.
+# Jedyne miejsce, które zamienia role na kolory. Strategie nie wiedzą nic o SDL.
+
+fun set_role_color(renderer: cptr SDL_Renderer, role: i64) = {
+	if (role == Role.Unit) { set_color(renderer, 255u8, 244u8, 200u8); }        # jasnożółty
+	if (role == Role.Excluded) { set_color(renderer, 215u8, 230u8, 255u8); }    # jasnoniebieski
+	if (role == Role.Excluder) { set_color(renderer, 125u8, 170u8, 250u8); }    # mocny niebieski
+	if (role == Role.Pattern) { set_color(renderer, 140u8, 220u8, 140u8); }     # zielony
+	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # pomarańczowy
+	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # czerwony
+	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # jasnozielony
+}
+
+fun cell_x(c: i64) -> i32 = ORIGIN + (col_of(c) as i32) * CELL;
+fun cell_y(c: i64) -> i32 = ORIGIN + (row_of(c) as i32) * CELL;
+# Środek małej cyfry kandydata d (mini-siatka 3x3: 1 lewy górny, 9 prawy dolny).
+fun cand_x(c: i64, d: i64) -> i32 = cell_x(c) + (((d - 1) % 3) as i32) * (CELL / 3) + CELL / 6;
+fun cand_y(c: i64, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL / 3) + CELL / 6;
+
+# Czy krok wpisuje cyfrę w komórkę c (wtedy nie rysujemy tam kandydatów).
+fun is_placed(f: ref Step, c: i64) -> bool = {
+	var i = 0;
+	while (i < f.cells.length()) {
+		if (f.cells.at(i).cell == c and f.cells.at(i).role == Role.Placed) { return true; }
+		i += 1;
+	}
+	return false;
+}
+
+# Numer ruchu, do którego należy krok step_idx.
+fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
+	var m: i64 = 0;
+	while (m + 1 < result.move_start.length() and result.move_start.at(m + 1) <= step_idx) { m += 1; }
+	return m;
+}
+
+# Gruba linia = trzy równoległe cienkie.
+fun thick_line(renderer: cptr SDL_Renderer, x1: i32, y1: i32, x2: i32, y2: i32) = {
+	var o = 0 - 1;
+	while (o <= 1) {
+		let a = SDL_RenderDrawLine(renderer, x1 + o, y1, x2 + o, y2);
+		let b = SDL_RenderDrawLine(renderer, x1, y1 + o, x2, y2 + o);
+		o += 1;
+	}
+}
+
+# Jak make_text, ale ze String i zawijaniem do `wrap` pikseli.
+fun make_wrapped_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, s: ref String, wrap: u32) -> Text = {
+	var z = copy s;
+	z.append('\0');
+	var color: SDL_Color;
+	color.r = 40u8;
+	color.g = 40u8;
+	color.b = 40u8;
+	color.a = 255u8;
+	let surface = dk_TTF_RenderUTF8_Blended_Wrapped(font, cstr(z.asSlice()), &color as cptr SDL_Color, wrap);
+	var result: Text;
+	result.w = surface[0].w;
+	result.h = surface[0].h;
+	result.tex = SDL_CreateTextureFromSurface(renderer, surface);
+	SDL_FreeSurface(surface);
+	return result;
+}
+
+class StepView {
+	given: Text[10];    # cyfry z zadania
+	solved: Text[10];   # wpisane przez solver we wcześniejszych krokach
+	placed: Text[10];   # wpisywana w bieżącym kroku
+	small: Text[10];    # kandydaci
+	header: Text;
+	body: Text;
+	shown: i64 = 0 - 1; # dla którego kroku są aktualne header/body
+	panel_font: cptr TTF_Font;
+	move_lines: List[Text];  # "12. Hidden Single" dla każdego ruchu, budowane przy pierwszym draw
+	title: Text;
+	legend: Text[7];         # opisy kolorów ról
+	keys_help: Text;
+
+	global fun create(renderer: cptr SDL_Renderer, big: cptr TTF_Font, small_font: cptr TTF_Font) -> StepView = {
+		var v: StepView;
+		var d = 1;
+		while (d <= 9) {
+			v.given[d] = digit_text(renderer, big, d, 20u8, 20u8, 20u8);
+			v.solved[d] = digit_text(renderer, big, d, 40u8, 90u8, 200u8);
+			v.placed[d] = digit_text(renderer, big, d, 0u8, 140u8, 40u8);
+			v.small[d] = digit_text(renderer, small_font, d, 110u8, 110u8, 110u8);
+			d += 1;
+		}
+		v.panel_font = small_font;
+		v.title = make_text(renderer, small_font, cstr("Ruchy solvera\0"), 30u8, 30u8, 30u8);
+		v.legend[Role.Unit] = make_text(renderer, small_font, cstr("jednostka, w której szukamy\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Excluded] = make_text(renderer, small_font, cstr("obszar wykluczony przez cyfrę\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Excluder] = make_text(renderer, small_font, cstr("cyfra, która wyklucza\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Pattern] = make_text(renderer, small_font, cstr("kandydat tworzący wzór\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Target] = make_text(renderer, small_font, cstr("pole docelowe\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Eliminated] = make_text(renderer, small_font, cstr("skreślany kandydat\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Placed] = make_text(renderer, small_font, cstr("wpisywana cyfra\0"), 60u8, 60u8, 60u8);
+		v.keys_help = make_text(renderer, small_font, cstr("←/→ krok   Esc edytor\0"), 90u8, 90u8, 90u8);
+		return v;
+	}
+
+	# Wołać po każdym nowym rozwiązaniu: unieważnia teksty zbudowane dla poprzedniego.
+	fun reset() = {
+		var i = 0;
+		while (i < move_lines.length()) { SDL_DestroyTexture(move_lines.at(i).tex); i += 1; }
+		move_lines.clear();
+		if (shown >= 0) { SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
+		shown = 0 - 1;
+	}
+
+	# Panel po prawej (DESIGN 13.1): lista ruchów z bieżącym podświetlonym, legenda, klawisze.
+	fun draw_panel(renderer: cptr SDL_Renderer, result: ref SolveResult, step_idx: i64) = {
+		let x = ORIGIN + BOARD + 30;
+		let rows: i64 = 22;
+		if (move_lines.length() == 0) {
+			var k = 0;
+			while (k < result.move_start.length()) {
+				let line = f"{k + 1}. {result.steps.at(result.move_start.at(k)).strategy}";
+				move_lines.push(make_wrapped_text(renderer, panel_font, &line, 300u32));
+				k += 1;
+			}
+		}
+		draw_text(renderer, title, x, ORIGIN + 8, false);
+
+		# Okno listy przewija się tak, żeby bieżący ruch był mniej więcej w środku.
+		let current = move_of(result, step_idx);
+		var first = current - rows / 2;
+		if (first > move_lines.length() - rows) { first = move_lines.length() - rows; }
+		if (first < 0) { first = 0; }
+		var i = first;
+		while (i < move_lines.length() and i < first + rows) {
+			let row_y = ORIGIN + 30 + ((i - first) as i32) * 20;
+			if (i == current) {
+				set_color(renderer, 190u8, 215u8, 255u8);
+				fill_rect(renderer, x - 6, row_y, 300, 20);
+			}
+			draw_text(renderer, move_lines.at(i), x, row_y + 10, false);
+			i += 1;
+		}
+
+		var y = ORIGIN + 30 + (rows as i32) * 20 + 20;
+		var r = 0;
+		while (r < 7) {
+			set_role_color(renderer, r);
+			fill_rect(renderer, x, y, 18, 18);
+			draw_text(renderer, legend[r], x + 28, y + 9, false);
+			y += 24;
+			r += 1;
+		}
+		draw_text(renderer, keys_help, x, y + 16, false);
+	}
+
+	fun draw(renderer: cptr SDL_Renderer, font: cptr TTF_Font, result: ref SolveResult, step_idx: i64) = {
+		let f = result.steps.at(step_idx);
+		let step = f;
+		let s = result.snapshots.at(step_idx);
+
+		if (shown != step_idx) {   # tekst renderujemy tylko po zmianie
+			if (shown >= 0) { SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
+			let m = move_of(result, step_idx);
+			let h = f"Krok {step_idx + 1}/{result.steps.length()} · ruch {m + 1}: {f.strategy}";
+			header = make_wrapped_text(renderer, font, &h, 540u32);
+			body = make_wrapped_text(renderer, font, &f.text, 540u32);
+			shown = step_idx;
+		}
+
+		# Tło planszy, potem tła jednostek i komórek wg ról.
+		set_color(renderer, 255u8, 255u8, 255u8);
+		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
+		var i = 0;
+		while (i < f.units.length()) {
+			let m = f.units.at(i);
+			set_role_color(renderer, m.role);
+			var k = 0;
+			while (k < 9) { let uc = unit_cell(m.unit, k); fill_rect(renderer, cell_x(uc), cell_y(uc), CELL, CELL); k += 1; }
+			i += 1;
+		}
+		i = 0;
+		while (i < f.cells.length()) {
+			let m = f.cells.at(i);
+			set_role_color(renderer, m.role);
+			fill_rect(renderer, cell_x(m.cell), cell_y(m.cell), CELL, CELL);
+			i += 1;
+		}
+
+		# Siatka (jak w edytorze).
+		var line = 0;
+		while (line <= 9) {
+			let offset = ORIGIN + line * CELL;
+			if (line % 3 == 0) {
+				set_color(renderer, 30u8, 30u8, 30u8);
+				fill_rect(renderer, offset - 1, ORIGIN - 1, 3, BOARD + 3);
+				fill_rect(renderer, ORIGIN - 1, offset - 1, BOARD + 3, 3);
+			} else {
+				set_color(renderer, 180u8, 180u8, 180u8);
+				fill_rect(renderer, offset, ORIGIN, 1, BOARD);
+				fill_rect(renderer, ORIGIN, offset, BOARD, 1);
+			}
+			line += 1;
+		}
+
+		# Cyfry: podane / wpisane wcześniej / wpisywane teraz (zielone, z CellMark{Placed}).
+		var c = 0;
+		while (c < 81) {
+			let v = s.value(c);
+			if (v != 0) {
+				let t = if s.cell(c).given then given[v] else solved[v];
+				draw_text(renderer, t, cell_x(c) + CELL / 2, cell_y(c) + CELL / 2, true);
+			}
+			c += 1;
+		}
+		i = 0;
+		while (i < f.cells.length()) {
+			let m = f.cells.at(i);
+			var k = 0;
+			while (m.role == Role.Placed and k < step.placements.length()) {
+				let p = step.placements.at(k);
+				if (p.cell == m.cell) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
+				k += 1;
+			}
+			i += 1;
+		}
+
+		# Kandydaci: kolorowe tło znaczników, cyfry, przekreślenia.
+		i = 0;
+		while (i < f.cands.length()) {
+			let m = f.cands.at(i);
+			set_role_color(renderer, m.role);
+			fill_rect(renderer, cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
+			i += 1;
+		}
+		c = 0;
+		while (c < 81) {
+			var d = 1;
+			while (d <= 9) {
+				if (s.has(c, d) and not is_placed(f, c)) { draw_text(renderer, small[d], cand_x(c, d), cand_y(c, d), true); }
+				d += 1;
+			}
+			c += 1;
+		}
+		set_color(renderer, 200u8, 0u8, 0u8);
+		i = 0;
+		while (i < f.cands.length()) {
+			let m = f.cands.at(i);
+			if (m.role == Role.Eliminated) {
+				thick_line(renderer, cand_x(m.cell, m.digit) - 8, cand_y(m.cell, m.digit) + 8, cand_x(m.cell, m.digit) + 8, cand_y(m.cell, m.digit) - 8);
+			}
+			i += 1;
+		}
+
+		# Opis pod planszą (zasłania podpowiedź edytora).
+		set_color(renderer, 245u8, 243u8, 236u8);
+		fill_rect(renderer, 0, ORIGIN + BOARD + 3, ORIGIN + BOARD + 10, HEIGHT);
+		draw_text(renderer, header, ORIGIN, ORIGIN + BOARD + 25, false);
+		draw_text(renderer, body, ORIGIN + 0, ORIGIN + BOARD + 50 + body.h / 2, false);
+
+		draw_panel(renderer, result, step_idx);
+	}
+}
