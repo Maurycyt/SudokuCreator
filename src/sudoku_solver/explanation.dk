@@ -16,6 +16,7 @@ namespace Role {
 class UnitMark { unit: i64; role: i64; }
 class CellMark { cell: CellCoord; role: i64; }
 class CandMark { cell: CellCoord; digit: i64; role: i64; }
+class LineMark { from: CellCoord; to: CellCoord; role: i64; }
 
-# One coloring: a whole unit, a cell, or a candidate. The GUI tells them apart via match.
-const Mark = UnitMark | CellMark | CandMark;
+# One coloring: a whole unit, a cell, a candidate, or a connecting line. The GUI tells them apart via match.
+const Mark = UnitMark | CellMark | CandMark | LineMark;

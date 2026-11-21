@@ -44,6 +44,8 @@ class StepsBuilder {
 	fun unit(u: i64, role: i64) = { cur().marks.push(UnitMark(u, role)); }
 	fun cell(c: CellCoord, role: i64) = { cur().marks.push(CellMark(c, role)); }
 	fun cand(c: CellCoord, d: i64, role: i64) = { cur().marks.push(CandMark(c, d, role)); }
+	# A connecting line from one cell to another, e.g. from an excluded cell to the cell excluding it.
+	fun line(from: CellCoord, to: CellCoord, role: i64) = { cur().marks.push(LineMark(from, to, role)); }
 	# Effects: records the move and immediately marks it to be drawn.
 	fun place(c: CellCoord, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
 	fun eliminate(c: CellCoord, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }

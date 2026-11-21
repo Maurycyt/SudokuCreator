@@ -47,10 +47,12 @@ fun unit_of(c: CellCoord, which: i64) -> i64 = {
 fun sees(a: CellCoord, b: CellCoord) -> bool =
 	not same_cell(a, b) and (a.row == b.row or a.col == b.col or box_of(a) == box_of(b));
 
-# r3c5 / r3, c5, b2 (1-based).
-fun cell_name(c: CellCoord) -> String = f"r{c.row + 1}c{c.col + 1}";
+# "row 3, column 5" / "row 3" / "column 5" / "box (2,1)" (1-based; a box is named by its
+# row band then column band, e.g. box (2,1) is the middle-left box).
+fun cell_name(c: CellCoord) -> String = f"row {c.row + 1}, column {c.col + 1}";
 fun unit_name(u: i64) -> String = {
-	if (u < 9) { return f"r{u + 1}"; }
-	if (u < 18) { return f"c{u - 8}"; }
-	return f"b{u - 17}";
+	if (u < 9) { return f"row {u + 1}"; }
+	if (u < 18) { return f"column {u - 8}"; }
+	let b = u - 18;
+	return f"box ({b / 3 + 1},{b % 3 + 1})";
 }

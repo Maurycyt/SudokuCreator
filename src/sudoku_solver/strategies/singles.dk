@@ -5,7 +5,7 @@ import src.sudoku_solver.explanation.*;
 import src.sudoku_solver.strategies.*;
 
 # The simplest strategies. Each one places a single digit.
-# Steps: first the result (the digit in green), then the explanation.
+# Steps: first the explanation (nothing placed yet), then the result (the digit in green).
 
 # Full House: a unit has one empty cell left.
 fun find_full_house(s: ref SolverState) -> List[Step] = {
@@ -22,8 +22,9 @@ fun find_full_house(s: ref SolverState) -> List[Step] = {
 		}
 		if (count == 1) {
 			let d = s.first_candidate(empty);
-			sb.step(f"{unit_name(u)} has one empty cell left, and only {d} is missing from it.");
+			sb.step(f"{unit_name(u)} has one empty cell left.");
 			sb.unit(u, Role.Unit);
+			sb.step_keep(f"Only {d} is missing from it.");
 			sb.place(empty, d);
 		}
 		u += 1;
@@ -49,11 +50,11 @@ fun find_hidden_single(s: ref SolverState) -> List[Step] = {
 				k += 1;
 			}
 			if (count == 1 and not s.unit_has(u, d)) {
-				sb.step(f"In {unit_name(u)}, digit {d} can only go in {cell_name(target)}.");
+				sb.step(f"In {unit_name(u)}, all cells but one cannot contain digit {d}, because they share a row, column, or box with another cell that already contains it.");
 				sb.unit(u, Role.Unit);
-				sb.place(target, d);
-				sb.step_keep(f"Why? The other cells of {unit_name(u)} exclude digit {d} through a shared row, column, or box.");
 				explain_excluders(s, u, d, target, &sb);
+				sb.step_keep(f"So digit {d} can only go in {cell_name(target)}.");
+				sb.place(target, d);
 			}
 			d += 1;
 		}
@@ -62,31 +63,34 @@ fun find_hidden_single(s: ref SolverState) -> List[Step] = {
 	return copy sb.steps;
 }
 
-# For each empty cell of unit u other than target, finds a placed d that excludes it:
-# its row/column/box is highlighted light blue, the digit itself in strong blue.
+# For each empty cell of unit u other than target, connects it to the cell that excludes digit d from it.
 fun explain_excluders(s: ref SolverState, u: i64, d: i64, target: CellCoord, sb: ref StepsBuilder) = {
 	var k = 0;
 	while (k < 9) {
 		let c = unit_cell(u, k);
-		if (not same_cell(c, target) and s.value(c) == 0) {
-			let cells = all_cells();
-			var i = 0;
-			var found = false;
-			while (i < cells.length() and not found) {
-				let p = cells.at(i);
-				if (s.value(p) == d and sees(c, p)) {
-					found = true;
-					var w = 0;
-					while (w < 3) {   # the first unit shared by p and c, other than u
-						if (unit_of(p, w) == unit_of(c, w) and unit_of(p, w) != u) { sb.unit(unit_of(p, w), Role.Excluded); w = 3; }
-						w += 1;
-					}
-					sb.cell(p, Role.Excluder);
-				}
-				i += 1;
-			}
-		}
+		if (not same_cell(c, target) and s.value(c) == 0) { mark_exclusion(s, c, d, sb); }
 		k += 1;
+	}
+}
+
+# Finds a cell holding digit d that excludes it from cell c, and connects the two: a straight line
+# when they share a row or column, otherwise a highlight of their shared box.
+fun mark_exclusion(s: ref SolverState, c: CellCoord, d: i64, sb: ref StepsBuilder) = {
+	let cells = all_cells();
+	var i = 0;
+	var found = false;
+	while (i < cells.length() and not found) {
+		let p = cells.at(i);
+		if (s.value(p) == d and sees(c, p)) {
+			found = true;
+			if (p.row == c.row or p.col == c.col) {
+				sb.line(c, p, Role.Excluder);
+			} else {
+				sb.unit(18 + box_of(p), Role.Excluded);
+			}
+			sb.cell(p, Role.Excluder);
+		}
+		i += 1;
 	}
 }
 
@@ -99,12 +103,14 @@ fun find_naked_single(s: ref SolverState) -> List[Step] = {
 		let c = cells.at(i);
 		if (s.value(c) == 0 and s.count(c) == 1) {
 			let d = s.first_candidate(c);
-			sb.step(f"Only {d} fits in {cell_name(c)}.");
+			sb.step(f"At {cell_name(c)}, all digits but one are excluded, because each already appears in its row, column, or box.");
+			var e = 1;
+			while (e <= 9) {
+				if (e != d) { mark_exclusion(s, c, e, &sb); }
+				e += 1;
+			}
+			sb.step_keep(f"So only {d} fits there.");
 			sb.place(c, d);
-			sb.step_keep(f"Why? Every other digit is already in the row, column, or box of {cell_name(c)}.");
-			sb.unit(unit_of(c, 0), Role.Excluded);
-			sb.unit(unit_of(c, 1), Role.Excluded);
-			sb.unit(unit_of(c, 2), Role.Excluded);
 		}
 		i += 1;
 	}

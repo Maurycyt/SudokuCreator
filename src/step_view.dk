@@ -69,6 +69,22 @@ fun draw_strike(renderer: cptr SDL_Renderer, m: CandMark) = {
 		thick_line(renderer, cand_x(m.cell, m.digit) - 8, cand_y(m.cell, m.digit) + 8, cand_x(m.cell, m.digit) + 8, cand_y(m.cell, m.digit) - 8);
 	}
 }
+# A line from the center of `from` to the near edge of `to` (so it stops short of `to`'s cell),
+# passing through every cell in between. `from` and `to` must share a row or a column.
+fun draw_line_mark(renderer: cptr SDL_Renderer, m: LineMark) = {
+	set_role_color(renderer, m.role);
+	if (m.from.col == m.to.col) {
+		let x = cell_x(m.from) + CELL / 2;
+		let y1 = cell_y(m.from) + CELL / 2;
+		let y2 = if m.to.row > m.from.row then cell_y(m.to) else cell_y(m.to) + CELL;
+		thick_line(renderer, x, y1, x, y2);
+	} else {
+		let y = cell_y(m.from) + CELL / 2;
+		let x1 = cell_x(m.from) + CELL / 2;
+		let x2 = if m.to.col > m.from.col then cell_x(m.to) else cell_x(m.to) + CELL;
+		thick_line(renderer, x1, y, x2, y);
+	}
+}
 
 # A thick line = three parallel thin ones.
 fun thick_line(renderer: cptr SDL_Renderer, x1: i32, y1: i32, x2: i32, y2: i32) = {
@@ -235,6 +251,16 @@ class StepView {
 				fill_rect(renderer, ORIGIN, offset, BOARD, 1);
 			}
 			line += 1;
+		}
+
+		# Lines connecting an excluded cell to the cell excluding it.
+		i = 0;
+		while (i < f.marks.length()) {
+			match (f.marks.at(i)) {
+				case m: LineMark = draw_line_mark(renderer, m);
+				case _ = ();
+			};
+			i += 1;
 		}
 
 		# Digits: given / previously entered / being entered now (green, via CellMark{Placed}).
