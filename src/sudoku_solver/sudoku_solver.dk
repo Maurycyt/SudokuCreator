@@ -2,7 +2,7 @@ import core.containers.*;
 import src.partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
 import strategies.*;
-import singles.*;
+import strategies.singles.*;
 
 # Registry, easiest first. A new strategy = one line here.
 fun all_strategies() -> List[Strategy] = {
