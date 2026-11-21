@@ -6,6 +6,7 @@ import SudokuCreator.creator.examples.*;
 import SudokuCreator.multiset.*;
 import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.SolveResult;
+import SudokuCreator.sudoku_solver.all_strategies;
 import SudokuCreator.sudoku_solver.difficulty.*;
 
 # Diagnostics without a window, selected by the SUDOKU_HEADLESS environment variable:
@@ -86,12 +87,47 @@ fun check(ok: bool, label: str) -> bool = {
 fun check_example(ex: ref ExampleBoard) -> bool = {
 	var creator: Creator;
 	creator.load(ex.board);
-	print(f"== {ex.name} (expected difficulty at most {ex.max_difficulty}) ==\n");
+	print(f"== {ex.name} (expected difficulty {ex.max_difficulty}) ==\n");
 	print_summary(&creator);
 	let solved = check(not creator.result.stuck, "not solved");
-	let easy = check(hardest_strategy(&creator.result) <= ex.max_difficulty, "needed a harder strategy than expected");
+	let exact = check(hardest_strategy(&creator.result) == ex.max_difficulty, "the hardest strategy used is not the expected one");
 	print('\n');
-	return solved and easy;
+	return solved and exact;
+}
+
+fun uses(r: ref SolveResult, strategy: str) -> bool = {
+	var i = 0;
+	while (i < r.steps.length()) {
+		if (r.steps.at(i).strategy == strategy) { return true; }
+		i += 1;
+	}
+	return false;
+}
+
+# Every strategy is shown by at least one example.
+fun check_coverage(examples: ref List[ExampleBoard]) -> bool = {
+	var results: List[SolveResult];
+	var i = 0;
+	while (i < examples.length()) {
+		var creator: Creator;
+		creator.load(examples.at(i).board);
+		results.push(creator.result);
+		i += 1;
+	}
+	var ok = true;
+	let strategies = all_strategies();
+	var k = 0;
+	while (k < strategies.length()) {
+		var covered = false;
+		i = 0;
+		while (i < results.length() and not covered) {
+			covered = uses(results.at(i), strategies.at(k).name);
+			i += 1;
+		}
+		ok = check(covered, f"no example uses {strategies.at(k).name}") and ok;
+		k += 1;
+	}
+	return ok;
 }
 
 fun check_multiset() -> bool = {
@@ -129,6 +165,7 @@ fun self_test() -> bool = {
 		ok = check_example(examples.at(i)) and ok;
 		i += 1;
 	}
+	ok = check_coverage(&examples) and ok;
 	print(if ok then "ALL OK\n" else "SOME CHECKS FAILED\n");
 	return ok;
 }
