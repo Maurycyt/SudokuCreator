@@ -9,5 +9,6 @@ fun example_boards() -> List[ExampleBoard] = {
 	examples.push(ExampleBoard("Hidden Single", "68.2..4.7...8.73.9..5.....2....34.8..4...9.2..1.68.5...3.4..7.596.7.....2.7......", 1.2));
 	examples.push(ExampleBoard("Naked Single", "6.7.3.1...8.6.....1....836.21....47..4.12.6.5..65...3.8...7.952..........3...97..", 2.3));
 	examples.push(ExampleBoard("X-Wing", "1...93..4..7......4.......2..8..247....7.....3.5.6.9.....1...63.....61...3.28....", 3.5));
+	examples.push(ExampleBoard("Swordfish", "16.543.7..786.14354358.76.172.458.696..912.57...376..4.16.3..4.3...8..16..71645.3", 4.2));
 	return examples;
 }

@@ -3,15 +3,29 @@ import SudokuCreator.partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
 import strategies.*;
 import strategies.singles.*;
-import strategies.x_wing.*;
+import strategies.locked_candidates.*;
+import strategies.subsets.*;
+import strategies.fish.*;
+import strategies.xy_wing.*;
 
-# Easiest first.
+# Easiest first; difficulties roughly follow Sudoku Explainer's ratings.
 fun all_strategies() -> List[Strategy] = {
 	var s: List[Strategy];
 	s.push(Strategy("Full House", 1.0, find_full_house));
 	s.push(Strategy("Hidden Single", 1.2, find_hidden_single));
 	s.push(Strategy("Naked Single", 2.3, find_naked_single));
-	s.push(Strategy("X-Wing", 3.5, find_x_wing));
+	s.push(Strategy("Pointing", 2.6, find_locked[true]));
+	s.push(Strategy("Claiming", 2.8, find_locked[false]));
+	s.push(Strategy("Naked Pair", 3.0, NakedSubset[2].find));
+	s.push(Strategy("Hidden Pair", 3.4, HiddenSubset[2].find));
+	s.push(Strategy("X-Wing", 3.5, Fish[2].find));
+	s.push(Strategy("Naked Triple", 3.6, NakedSubset[3].find));
+	s.push(Strategy("Swordfish", 3.8, Fish[3].find));
+	s.push(Strategy("Hidden Triple", 4.0, HiddenSubset[3].find));
+	s.push(Strategy("XY-Wing", 4.2, find_xy_wing));
+	s.push(Strategy("Naked Quad", 5.0, NakedSubset[4].find));
+	s.push(Strategy("Jellyfish", 5.2, Fish[4].find));
+	s.push(Strategy("Hidden Quad", 5.4, HiddenSubset[4].find));
 	return s;
 }
 
@@ -44,20 +58,20 @@ class SudokuSolver {
 	}
 
 	fun try_strategy(strategy: ref Strategy, r: ref SolveResult) -> bool = {
-		var sb: StepsBuilder;
-		if (not strategy.find(&state, &sb)) { return false; }
+		var steps = strategy.find(&state);
+		if (steps.length() == 0) { return false; }
 
 		r.move_start.push(r.steps.length());
 		var k = 0;
-		while (k < sb.steps.length()) {
-			var step = copy sb.steps.at(k);
+		while (k < steps.length()) {
+			var step = copy steps.at(k);
 			step.strategy = strategy.name;
 			step.difficulty = strategy.difficulty;
 			r.snapshots.push(state);
 			r.steps.push(move step);
 			k += 1;
 		}
-		apply(sb.cur());
+		apply(steps.at(steps.length() - 1));
 		return true;
 	}
 

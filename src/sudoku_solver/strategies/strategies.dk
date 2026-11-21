@@ -3,9 +3,9 @@ import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.solver_state.SolverState;
 import SudokuCreator.sudoku_solver.explanation.*;
 
-# A strategy looks for one move without changing the state. If it finds one, it records the
-# steps explaining it and returns true. Each step is one frame of the step viewer; the move's
-# effects are taken from the last step.
+# A strategy looks for one move without changing the state, and returns the steps explaining it
+# (none if it found nothing). Each step is one frame of the step viewer; the move's effects are
+# taken from the last step.
 
 class CandRef { cell: CellCoord; digit: i64; }
 
@@ -21,12 +21,15 @@ class Step {
 class Strategy {
 	name: str;
 	difficulty: f64;
-	find: funptr(ref SolverState, ref StepsBuilder) -> bool;
+	find: funptr(ref SolverState) -> List[Step];
 }
 
-# Usage: sb.step("..."); sb.unit(u, Role.Unit); sb.step_keep("..."); sb.place(c, d);
+# Appends to a list the strategy owns, so it can simply `return steps;` (moved, not copied):
+#   var steps: List[Step];
+#   var sb = StepsBuilder(&steps);
+#   sb.step("..."); sb.unit(u, Role.Unit); sb.step_keep("..."); sb.place(c, d);
 class StepsBuilder {
-	steps: List[Step];
+	steps: ref List[Step];
 
 	fun cur() -> ref Step = steps.at(steps.length() - 1);
 
@@ -51,4 +54,34 @@ class StepsBuilder {
 	# Effects; each is also marked on the board.
 	fun place(c: CellCoord, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
 	fun eliminate(c: CellCoord, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }
+}
+
+# "a and b" / "a, b and c" / ...
+fun join_names(names: ref List[String]) -> String = {
+	var out: String;
+	var i = 0;
+	while (i < names.length()) {
+		if (i > 0) { out.append(if i + 1 == names.length() then " and " else ", "); }
+		out.append(names.at(i));
+		i += 1;
+	}
+	return out;
+}
+
+# The number of set bits; with bit d standing for digit d this counts candidates.
+fun bit_count(mask: i64) -> i64 = {
+	var n: i64 = 0;
+	var m = mask;
+	while (m != 0) {
+		n += m & 1;
+		m = m >> 1;
+	}
+	return n;
+}
+
+# "1, 4 and 7" for a mask with bits 1, 4 and 7 set.
+fun digit_names(mask: i64) -> String = {
+	var names: List[String];
+	for (d in DIGITS) { if (((mask >> d) & 1) != 0) { names.push(f"{d}"); } }
+	return join_names(&names);
 }

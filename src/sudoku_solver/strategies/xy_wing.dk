@@ -1,0 +1,62 @@
+import core.containers.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+
+# XY-Wing: a pivot cell with candidates {x, y} sees two pincer cells with candidates {x, z} and
+# {y, z}. If the pivot is x, the first pincer is z; if it is y, the second one is. Either way
+# one pincer holds z, so z can be eliminated from every cell that sees both pincers.
+
+# The smallest digit in a candidate mask (0 if empty).
+fun lowest_digit(mask: i64) -> i64 = {
+	for (d in DIGITS) { if (((mask >> d) & 1) != 0) { return d; } }
+	return 0;
+}
+
+fun is_pair(s: ref SolverState, c: CellCoord) -> bool = s.value(c) == 0 and bit_count(s.cell(c).candidates) == 2;
+
+fun find_xy_wing(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
+	for (pivot in CELLS) {
+		if (not is_pair(s, pivot)) { continue; }
+		let pivot_mask = s.cell(pivot).candidates;
+		let x = lowest_digit(pivot_mask);
+		let y = lowest_digit(pivot_mask ^ (1 << x));
+		for (a in CELLS) {
+			# Pincer a: {x, z} with z not in the pivot.
+			if (not pivot.sees(a) or not is_pair(s, a) or not s.has(a, x) or s.has(a, y)) { continue; }
+			let z = lowest_digit(s.cell(a).candidates ^ (1 << x));
+			let b_mask = (1 << y) | (1 << z);
+			for (b in CELLS) {
+				# Pincer b: exactly {y, z}.
+				if (b == a or not pivot.sees(b) or s.value(b) != 0 or s.cell(b).candidates != b_mask) { continue; }
+				if (explain_xy_wing(s, &sb, pivot, a, b, x, y, z)) { return steps; }
+			}
+		}
+	}
+	return steps;
+}
+
+fun explain_xy_wing(s: ref SolverState, sb: ref StepsBuilder, pivot: CellCoord, a: CellCoord, b: CellCoord, x: i64, y: i64, z: i64) -> bool = {
+	var targets: List[CellCoord];
+	for (c in CELLS) {
+		if (c != pivot and c.sees(a) and c.sees(b) and s.has(c, z)) { targets.push(c); }
+	}
+	if (targets.length() == 0) { return false; }
+
+	sb.step(f"{pivot.name()} can only be {x} or {y}. If it is {x}, {a.name()} must be {z}; if it is {y}, {b.name()} must be {z}.");
+	sb.cell(pivot, Role.Target);
+	sb.cell(a, Role.Pattern);
+	sb.cell(b, Role.Pattern);
+	sb.cand(a, z, Role.Excluder);
+	sb.cand(b, z, Role.Excluder);
+	sb.step_keep(f"Either way one of them is {z}, so {z} can be eliminated from every cell that sees both.");
+	var i = 0;
+	while (i < targets.length()) {
+		sb.eliminate(targets.at(i), z);
+		i += 1;
+	}
+	return true;
+}

@@ -7,7 +7,9 @@ import SudokuCreator.sudoku_solver.strategies.*;
 # Strategies that place a single digit, explained in two steps: the reasoning, then the placement.
 
 # Full House: a unit has one empty cell left.
-fun find_full_house(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+fun find_full_house(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
 	for (unit in UNITS) {
 		var empty: CellCoord;
 		var empty_count = 0;
@@ -22,14 +24,16 @@ fun find_full_house(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
 		sb.unit(unit.id, Role.Unit);
 		sb.step_keep(f"Only {d.value()} is missing from it.");
 		sb.place(empty, d.value());
-		return true;
+		return steps;
 	}
-	return false;
+	return steps;
 }
 
 # Hidden Single: a digit has one possible cell left in a unit. Boxes are searched first, as a
 # human would.
-fun find_hidden_single(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+fun find_hidden_single(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
 	var i = 0;
 	while (i < 27) {
 		let unit = UNITS[(i + 18) % 27];
@@ -42,31 +46,33 @@ fun find_hidden_single(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
 			sb.step(f"In {unit.name()}, all cells but one cannot contain digit {d}, because they share a row, column, or box with another cell that already contains it.");
 			sb.unit(unit.id, Role.Unit);
 			for (c in unit.cells) {
-				if (c != target and s.value(c) == 0) { mark_exclusion(s, c, d, sb); }
+				if (c != target and s.value(c) == 0) { mark_exclusion(s, c, d, &sb); }
 			}
 			sb.step_keep(f"So digit {d} can only go in {target.name()}.");
 			sb.place(target, d);
-			return true;
+			return steps;
 		}
 	}
-	return false;
+	return steps;
 }
 
 # Naked Single: a cell has exactly one candidate.
-fun find_naked_single(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+fun find_naked_single(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
 	for (c in CELLS) {
 		let d = s.sole_candidate(c);  # filled cells have no candidates
 		if (d.isEmpty()) { continue; }
 
 		sb.step(f"At {c.name()}, all digits but one are excluded, because each already appears in its row, column, or box.");
 		for (e in DIGITS) {
-			if (e != d.value()) { mark_exclusion(s, c, e, sb); }
+			if (e != d.value()) { mark_exclusion(s, c, e, &sb); }
 		}
 		sb.step_keep(f"So only {d.value()} fits there.");
 		sb.place(c, d.value());
-		return true;
+		return steps;
 	}
-	return false;
+	return steps;
 }
 
 # Marks a cell holding d that excludes d from c: connected by a line when they share a row or

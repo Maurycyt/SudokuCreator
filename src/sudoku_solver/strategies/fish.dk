@@ -1,0 +1,162 @@
+import core.containers.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+
+# Basic fish of size N (X-Wing = 2, Swordfish = 3, Jellyfish = 4): in N rows (the base lines),
+# digit d can only go in cells that all lie in just N columns (the cover lines). Each base row
+# needs its own d, each in a different cover column, so together they use up d for all N cover
+# columns: d can be eliminated from the rest of them. The same holds with rows and columns swapped.
+
+fun fish_name(size: i64) -> str = {
+	if (size == 2) { return "an X-Wing"; }
+	if (size == 3) { return "a Swordfish"; }
+	return "a Jellyfish";
+}
+
+# The unit crossing `line` at c: c's column if `line` is a row, c's row if it is a column.
+fun crossing_unit(line: ref Unit, c: CellCoord) -> i64 = if line.id < 9 then 9 + c.col else c.row;
+
+fun abs(x: i64) -> i64 = if x < 0 then -x else x;
+fun distance(a: CellCoord, b: CellCoord) -> i64 = abs(a.row - b.row) + abs(a.col - b.col);
+
+fun contains(ids: ref List[i64], id: i64) -> bool = {
+	var i = 0;
+	while (i < ids.length()) {
+		if (ids.at(i) == id) { return true; }
+		i += 1;
+	}
+	return false;
+}
+
+# "row 1 and row 5" / "column 2, column 4 and column 9"
+fun unit_names(ids: ref List[i64]) -> String = {
+	var names: List[String];
+	var i = 0;
+	while (i < ids.length()) {
+		names.push(UNITS[ids.at(i)].name());
+		i += 1;
+	}
+	return join_names(&names);
+}
+
+# A fish being built for digit d: the base lines chosen so far, as unit ids in ascending order.
+class FishBase {
+	d: i64;
+	base: List[i64];
+
+	# The units crossing the base lines where d is still possible, in ascending order.
+	fun cover(s: ref SolverState) -> List[i64] = {
+		var covered: i64[27];
+		var i = 0;
+		while (i < base.length()) {
+			let line = &UNITS[base.at(i)];
+			let cells = s.candidate_cells(line, d);
+			var k = 0;
+			while (k < cells.length()) {
+				covered[crossing_unit(line, cells.at(k))] = 1;
+				k += 1;
+			}
+			i += 1;
+		}
+		var ids: List[i64];
+		var id = 0;
+		for (flag in covered) {
+			if (flag != 0) { ids.push(id); }
+			id += 1;
+		}
+		return ids;
+	}
+
+	# Of the base cells in c's cover line still holding d, the one farthest from c, so a line from
+	# c to it passes all the others.
+	fun anchor(s: ref SolverState, c: CellCoord, cover_line: ref Unit) -> CellCoord = {
+		var best = c;
+		var best_distance: i64 = -1;
+		for (p in cover_line.cells) {
+			if (s.has(p, d) and contains(&base, crossing_unit(cover_line, p)) and distance(c, p) > best_distance) {
+				best = p;
+				best_distance = distance(c, p);
+			}
+		}
+		return best;
+	}
+}
+
+# Fish[N].find is the strategy for fish of size N.
+template(N: i64)
+namespace Fish {
+	fun find(s: ref SolverState) -> List[Step] = {
+		var steps: List[Step];
+		var sb = StepsBuilder(&steps);
+		for (first_line in [0i64, 9i64]) {  # base lines are rows, then columns
+			for (d in DIGITS) {
+				var fish: FishBase;
+				fish.d = d;
+				if (extend(s, &sb, &fish, first_line, first_line + 9)) { return steps; }
+			}
+		}
+		return steps;
+	}
+
+	# Adds base lines from `next` up to (not including) `end` until the fish has N of them. A base
+	# line holds d in 2 to N cells (with just one, it would be a Hidden Single). Returns true once
+	# a fish that eliminates something has been explained into sb.
+	fun extend(s: ref SolverState, sb: ref StepsBuilder, fish: ref FishBase, next: i64, end: i64) -> bool = {
+		if (fish.base.length() == N) {
+			var cover = fish.cover(s);
+			return cover.length() == N and explain_fish(s, sb, fish, &cover);
+		}
+		var line = next;
+		while (line < end) {
+			let n = s.candidate_cells(&UNITS[line], fish.d).length();
+			if (2 <= n <= N) {
+				fish.base.push(line);
+				if (extend(s, sb, fish, line + 1, end)) { return true; }
+				fish.base.pop();
+			}
+			line += 1;
+		}
+		return false;
+	}
+}
+
+fun explain_fish(s: ref SolverState, sb: ref StepsBuilder, fish: ref FishBase, cover: ref List[i64]) -> bool = {
+	let d = fish.d;
+	var targets: List[CellCoord];
+	var anchors: List[CellCoord];  # where each target's connecting line ends
+	var i = 0;
+	while (i < cover.length()) {
+		let unit = &UNITS[cover.at(i)];
+		for (c in unit.cells) {
+			if (s.has(c, d) and not contains(&fish.base, crossing_unit(unit, c))) {
+				targets.push(c);
+				anchors.push(fish.anchor(s, c, unit));
+			}
+		}
+		i += 1;
+	}
+	if (targets.length() == 0) { return false; }
+
+	sb.step(f"{unit_names(&fish.base)} can only place digit {d} in {unit_names(cover)}, forming {fish_name(cover.length())}.");
+	i = 0;
+	while (i < fish.base.length()) {
+		for (c in UNITS[fish.base.at(i)].cells) {
+			if (s.has(c, d)) { sb.cell(c, Role.Pattern); }
+		}
+		i += 1;
+	}
+	i = 0;
+	while (i < targets.length()) {
+		sb.line(targets.at(i), anchors.at(i), Role.Excluder);
+		i += 1;
+	}
+	sb.step_keep(f"So digit {d} can be eliminated from {unit_names(cover)} everywhere else.");
+	i = 0;
+	while (i < targets.length()) {
+		sb.eliminate(targets.at(i), d);
+		i += 1;
+	}
+	return true;
+}

@@ -1,0 +1,170 @@
+import core.containers.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+
+# Subsets of size N (pair = 2, triple = 3, quad = 4) within one unit. Candidates are bitmasks
+# (bit d = digit d), so "together these cells allow only N digits" is a popcount of an OR.
+#
+# Naked: N cells whose candidates together are just N digits. Those digits must fill exactly
+# these cells, so they can be eliminated from the rest of the unit.
+# Hidden: N digits that together can only go in N cells. These cells must hold exactly those
+# digits, so all their other candidates can be eliminated.
+
+fun subset_name(size: i64) -> str = {
+	if (size == 2) { return "pair"; }
+	if (size == 3) { return "triple"; }
+	return "quad";
+}
+
+# Bit k set = the k-th cell of the unit.
+fun cell_names(unit: ref Unit, cells: i64) -> String = {
+	var names: List[String];
+	var k = 0;
+	while (k < 9) {
+		if (((cells >> k) & 1) != 0) { names.push(unit.cells[k].name()); }
+		k += 1;
+	}
+	return join_names(&names);
+}
+
+# Bit k set = d is a candidate in the k-th cell of the unit.
+fun positions(s: ref SolverState, unit: ref Unit, d: i64) -> i64 = {
+	var cells: i64 = 0;
+	var k = 0;
+	while (k < 9) {
+		if (s.has(unit.cells[k], d)) { cells = cells | (1 << k); }
+		k += 1;
+	}
+	return cells;
+}
+
+# NakedSubset[N].find is the strategy for naked subsets of size N.
+template(N: i64)
+namespace NakedSubset {
+	fun find(s: ref SolverState) -> List[Step] = {
+		var steps: List[Step];
+		var sb = StepsBuilder(&steps);
+		for (unit in UNITS) {
+			if (extend(s, &sb, &unit, 0, 0, 0)) { return steps; }
+		}
+		return steps;
+	}
+
+	# `cells` (bit k = k-th cell of the unit) are chosen so far and allow the digits `digits`;
+	# adds cells from the `next`-th on.
+	fun extend(s: ref SolverState, sb: ref StepsBuilder, unit: ref Unit, cells: i64, digits: i64, next: i64) -> bool = {
+		if (bit_count(cells) == N) { return explain_naked(s, sb, unit, cells, digits); }
+		var k = next;
+		while (k < 9) {
+			let c = unit.cells[k];
+			let cands = s.cell(c).candidates;
+			if (s.value(c) == 0 and bit_count(digits | cands) <= N) {
+				if (extend(s, sb, unit, cells | (1 << k), digits | cands, k + 1)) { return true; }
+			}
+			k += 1;
+		}
+		return false;
+	}
+}
+
+fun explain_naked(s: ref SolverState, sb: ref StepsBuilder, unit: ref Unit, cells: i64, digits: i64) -> bool = {
+	if (bit_count(digits) != bit_count(cells)) { return false; }  # fewer digits: a contradiction
+	var targets: List[CandRef];
+	var k = 0;
+	while (k < 9) {
+		let c = unit.cells[k];
+		if (((cells >> k) & 1) == 0) {
+			for (d in DIGITS) {
+				if (((digits >> d) & 1) != 0 and s.has(c, d)) { targets.push(CandRef(c, d)); }
+			}
+		}
+		k += 1;
+	}
+	if (targets.length() == 0) { return false; }
+
+	let size = bit_count(cells);
+	sb.step(f"In {unit.name()}, the cells {cell_names(unit, cells)} together allow only the digits {digit_names(digits)}: a naked {subset_name(size)}.");
+	sb.unit(unit.id, Role.Unit);
+	k = 0;
+	while (k < 9) {
+		if (((cells >> k) & 1) != 0) {
+			let c = unit.cells[k];
+			for (d in DIGITS) { if (s.has(c, d)) { sb.cand(c, d, Role.Pattern); } }
+		}
+		k += 1;
+	}
+	sb.step_keep(f"These {size} digits must fill these {size} cells, so they can be eliminated from the rest of {unit.name()}.");
+	var i = 0;
+	while (i < targets.length()) {
+		sb.eliminate(targets.at(i).cell, targets.at(i).digit);
+		i += 1;
+	}
+	return true;
+}
+
+# HiddenSubset[N].find is the strategy for hidden subsets of size N.
+template(N: i64)
+namespace HiddenSubset {
+	fun find(s: ref SolverState) -> List[Step] = {
+		var steps: List[Step];
+		var sb = StepsBuilder(&steps);
+		for (unit in UNITS) {
+			if (extend(s, &sb, &unit, 0, 0, 1)) { return steps; }
+		}
+		return steps;
+	}
+
+	# `digits` (bit d = digit d) are chosen so far and can only go in `cells`; adds digits from
+	# `next` on. A digit already placed in the unit has no positions and is skipped.
+	fun extend(s: ref SolverState, sb: ref StepsBuilder, unit: ref Unit, digits: i64, cells: i64, next: i64) -> bool = {
+		if (bit_count(digits) == N) { return explain_hidden(s, sb, unit, digits, cells); }
+		var d = next;
+		while (d <= 9) {
+			let where = positions(s, unit, d);
+			if (where != 0 and bit_count(cells | where) <= N) {
+				if (extend(s, sb, unit, digits | (1 << d), cells | where, d + 1)) { return true; }
+			}
+			d += 1;
+		}
+		return false;
+	}
+}
+
+fun explain_hidden(s: ref SolverState, sb: ref StepsBuilder, unit: ref Unit, digits: i64, cells: i64) -> bool = {
+	if (bit_count(digits) != bit_count(cells)) { return false; }  # fewer cells: a contradiction
+	var targets: List[CandRef];
+	var k = 0;
+	while (k < 9) {
+		if (((cells >> k) & 1) != 0) {
+			let c = unit.cells[k];
+			for (d in DIGITS) {
+				if (((digits >> d) & 1) == 0 and s.has(c, d)) { targets.push(CandRef(c, d)); }
+			}
+		}
+		k += 1;
+	}
+	if (targets.length() == 0) { return false; }
+
+	let size = bit_count(digits);
+	sb.step(f"In {unit.name()}, the digits {digit_names(digits)} can only go in {cell_names(unit, cells)}: a hidden {subset_name(size)}.");
+	sb.unit(unit.id, Role.Unit);
+	k = 0;
+	while (k < 9) {
+		if (((cells >> k) & 1) != 0) {
+			let c = unit.cells[k];
+			for (d in DIGITS) {
+				if (((digits >> d) & 1) != 0 and s.has(c, d)) { sb.cand(c, d, Role.Pattern); }
+			}
+		}
+		k += 1;
+	}
+	sb.step_keep(f"These {size} cells must hold exactly these {size} digits, so their other candidates can be eliminated.");
+	var i = 0;
+	while (i < targets.length()) {
+		sb.eliminate(targets.at(i).cell, targets.at(i).digit);
+		i += 1;
+	}
+	return true;
+}

@@ -1,0 +1,80 @@
+import core.containers.*;
+import core.optional.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+
+# Locked Candidates: within one unit, digit d can only go in cells that all lie in a second unit
+# as well, so d must end up in their intersection and can be eliminated from the rest of the
+# second unit. Two flavors, depending on which unit is searched:
+#   Pointing (find_locked[true]):  a box whose candidates for d all lie in one row or column;
+#   Claiming (find_locked[false]): a row or column whose candidates for d all lie in one box.
+
+fun unit_contains(unit: ref Unit, c: CellCoord) -> bool = {
+	for (p in unit.cells) { if (p == c) { return true; } }
+	return false;
+}
+
+# The unit other than `unit` holding all of `cells`, if there is one: their common row or column
+# when `unit` is a box, their common box otherwise.
+fun shared_unit(unit: ref Unit, cells: ref List[CellCoord]) -> ?i64 = {
+	let first = cells.at(0);
+	var same_row = true;
+	var same_col = true;
+	var same_box = true;
+	var i = 1;
+	while (i < cells.length()) {
+		let c = cells.at(i);
+		same_row = same_row and c.row == first.row;
+		same_col = same_col and c.col == first.col;
+		same_box = same_box and c.box_index() == first.box_index();
+		i += 1;
+	}
+	if (unit.id >= 18) {
+		if (same_row) { return first.row; }
+		if (same_col) { return 9 + first.col; }
+		return none;
+	}
+	if (same_box) { return 18 + first.box_index(); }
+	return none;
+}
+
+template(POINTING: bool)
+fun find_locked(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
+	for (source in UNITS) {
+		if ((source.id >= 18) != POINTING) { continue; }
+		for (d in DIGITS) {
+			let cells = s.candidate_cells(&source, d);
+			if (cells.length() < 2) { continue; }  # with one cell left, it is a Hidden Single
+			let shared = shared_unit(&source, &cells);
+			if (shared.isEmpty()) { continue; }
+			let other = &UNITS[shared.value()];
+
+			var targets: List[CellCoord];
+			for (c in other.cells) {
+				if (s.has(c, d) and not unit_contains(&source, c)) { targets.push(c); }
+			}
+			if (targets.length() == 0) { continue; }
+
+			sb.step(f"In {source.name()}, digit {d} can only go in cells that also lie in {other.name()}.");
+			sb.unit(other.id, Role.Excluded);
+			sb.unit(source.id, Role.Unit);
+			var i = 0;
+			while (i < cells.length()) {
+				sb.cand(cells.at(i), d, Role.Pattern);
+				i += 1;
+			}
+			sb.step_keep(f"Wherever digit {d} goes in {source.name()}, it takes the place of {d} in {other.name()}, so it can be eliminated from the rest of {other.name()}.");
+			i = 0;
+			while (i < targets.length()) {
+				sb.eliminate(targets.at(i), d);
+				i += 1;
+			}
+			return steps;
+		}
+	}
+	return steps;
+}
