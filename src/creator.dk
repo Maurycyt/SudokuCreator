@@ -2,13 +2,16 @@ import core.builtins.*;
 import src.partial_sudoku.PartialSudoku;
 import src.sudoku_solver.SudokuSolver;
 import src.sudoku_solver.SolveResult;
+import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.difficulty.*;
 
 # Sudoku game state: a 9x9 table of cells. A cell's value is 0..9, where 0 means empty.
 
 var state: PartialSudoku;
-var solve_result: SolveResult;         # steps of the last try_solve(), for the step viewer
-var cell_difficulty: CellDifficulty;   # live analysis of the current board, for the editor view
+var solve_result: SolveResult;           # steps of the last try_solve(), for the step viewer
+var cell_difficulty: CellDifficulty;     # live analysis of the current board, for the editor view
+var board_unsolvable: bool;              # a direct contradiction in the entered digits
+var board_has_undetermined: bool;        # some empty cell the known strategies can't place
 
 fun set_cell(row: i64, col: i64, value: i64) = {
 	state.board[row][col].value = value;
@@ -21,9 +24,23 @@ fun get_cell(row: i64, col: i64) =
 # Re-runs the strategies against the current board and records, per empty cell, how hard it
 # would be to fill in right now. Called after every edit.
 fun analyze() = {
+	let fresh = SolverState.create(state);
+	board_unsolvable = has_direct_contradiction(&fresh);
+
 	var solver = SudokuSolver.create(state);
 	let result = solver.solve();
 	cell_difficulty = analyze_difficulty(&result);
+
+	board_has_undetermined = false;
+	var row = 0;
+	while (row < 9) {
+		var col = 0;
+		while (col < 9) {
+			if (get_cell(row, col) == 0 and cell_difficulty.board[row][col] < 0.0) { board_has_undetermined = true; }
+			col += 1;
+		}
+		row += 1;
+	}
 }
 
 # Solves the current board with the strategies. true = there is something to show.

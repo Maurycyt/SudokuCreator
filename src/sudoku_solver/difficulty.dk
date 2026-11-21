@@ -1,5 +1,6 @@
 import core.containers.*;
 import src.sudoku_solver.units.*;
+import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.strategies.*;
 import src.sudoku_solver.*;
 
@@ -10,10 +11,13 @@ import src.sudoku_solver.*;
 
 class CellDifficulty {
 	board: f64[9][9];  # a negative value means no known strategy can currently place that cell
-	min_known: f64;    # the easiest registered strategy's difficulty
-	max_known: f64;    # the hardest registered strategy's difficulty
 }
 
+# solve() always retries the easiest strategy first, so moves come out in nondecreasing
+# difficulty within whatever a given move unlocks — but a single hard move can unlock further
+# easy ones. A cell placed by an easy move that only became possible after an earlier hard move
+# is itself no easier to reach, so each cell is colored by the hardest difficulty used by any
+# move up to and including the one that placed it, not just that move's own difficulty.
 fun analyze_difficulty(result: ref SolveResult) -> CellDifficulty = {
 	var cd: CellDifficulty;
 	var row = 0;
@@ -23,27 +27,49 @@ fun analyze_difficulty(result: ref SolveResult) -> CellDifficulty = {
 		row += 1;
 	}
 
-	let strategies = all_strategies();
-	cd.min_known = strategies.at(0).difficulty;
-	cd.max_known = strategies.at(0).difficulty;
-	var s = 1;
-	while (s < strategies.length()) {
-		let d = strategies.at(s).difficulty;
-		if (d < cd.min_known) { cd.min_known = d; }
-		if (d > cd.max_known) { cd.max_known = d; }
-		s += 1;
-	}
-
+	var hardest_so_far: f64 = 0.0 - 1.0;
 	var i = 0;
 	while (i < result.steps.length()) {
 		let st = result.steps.at(i);
+		if (st.difficulty > hardest_so_far) { hardest_so_far = st.difficulty; }
 		var k = 0;
 		while (k < st.placements.length()) {
 			let p = st.placements.at(k);
-			cd.board[p.cell.row][p.cell.col] = st.difficulty;
+			cd.board[p.cell.row][p.cell.col] = hardest_so_far;
 			k += 1;
 		}
 		i += 1;
 	}
 	return cd;
+}
+
+# A direct, provable contradiction: either two cells in the same unit are already given the
+# same digit, or some empty cell has no candidate left at all. Either way, the board as entered
+# has no solution, regardless of how many strategies are known.
+fun has_direct_contradiction(s: ref SolverState) -> bool = {
+	var u = 0;
+	while (u < 27) {
+		var seen: bool[10];
+		var d = 0;
+		while (d < 10) { seen[d] = false; d += 1; }
+		var k = 0;
+		while (k < 9) {
+			let v = s.value(unit_cell(u, k));
+			if (v != 0) {
+				if (seen[v]) { return true; }
+				seen[v] = true;
+			}
+			k += 1;
+		}
+		u += 1;
+	}
+
+	let cells = all_cells();
+	var i = 0;
+	while (i < cells.length()) {
+		let c = cells.at(i);
+		if (s.value(c) == 0 and s.count(c) == 0) { return true; }
+		i += 1;
+	}
+	return false;
 }

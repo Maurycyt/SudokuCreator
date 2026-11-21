@@ -1,12 +1,15 @@
 import core.builtins.*;
+import core.containers.*;
 import sdl2.*;
 import SudokuCreator.creator.*;
 import SudokuCreator.step_view.*;
 
 # Sudoku Creator: a board editor with a live solvability heatmap.
 # Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it. Every edit
-# re-analyzes the board: empty cells the known strategies can currently fill in are tinted from
-# green (easy) to orange (hard); cells no known strategy can currently place are tinted red.
+# re-analyzes the board: empty cells the known strategies can currently fill in are tinted on a
+# gradient from blue (easy) through green and yellow to red (hard); cells no known strategy can
+# currently place are left white. If that leaves any cells undetermined, or the entered digits
+# directly contradict each other, a warning banner appears on the right.
 # Space: solve and browse the steps (left/right = step, Esc = back). L: load example.
 
 const CELL = 60;
@@ -91,6 +94,10 @@ fun main() = {
 		d = d + 1;
 	}
 	let help = make_text(renderer, small, cstr("Click a cell and type 1-9 · Space: solve · L: example\0"), 90u8, 90u8, 90u8);
+	let unsolvable_msg = f"This sudoku has no solution.";
+	let unsolvable_warning = make_wrapped_text(renderer, small, &unsolvable_msg, 260u32);
+	let undetermined_msg = f"Some cells can't be determined yet.";
+	let undetermined_warning = make_wrapped_text(renderer, small, &undetermined_msg, 260u32);
 
 	var selected_row = 4;
 	var selected_col = 4;
@@ -149,8 +156,9 @@ fun main() = {
 			while (diff_row < 9) {
 				var diff_col = 0;
 				while (diff_col < 9) {
-					if (get_cell(diff_row, diff_col) == 0) {
-						set_difficulty_color(renderer, &cell_difficulty, diff_row, diff_col);
+					let diff = cell_difficulty.board[diff_row][diff_col];
+					if (get_cell(diff_row, diff_col) == 0 and diff >= 0.0) {
+						set_gradient_color(renderer, diff);
 						fill_rect(renderer, ORIGIN + diff_col * CELL, ORIGIN + diff_row * CELL, CELL, CELL);
 					}
 					diff_col += 1;
@@ -194,7 +202,26 @@ fun main() = {
 		}
 
 		draw_text(renderer, help, ORIGIN, ORIGIN + BOARD + 20, false);
-		if (viewing) { view.draw(renderer, small, &solve_result, step_idx); }
+		if (viewing) {
+			view.draw(renderer, small, &solve_result, step_idx);
+		} else {
+			# Warning banners, where the step viewer would otherwise show its move list.
+			let panel_x = ORIGIN + BOARD + 30;
+			var panel_y = ORIGIN + 8;
+			if (board_unsolvable) {
+				set_color(renderer, 255u8, 150u8, 150u8);
+				fill_rect(renderer, panel_x, panel_y, unsolvable_warning.w + 20, unsolvable_warning.h + 16);
+				draw_text(renderer, unsolvable_warning, panel_x + 10, panel_y + unsolvable_warning.h / 2 + 8, false);
+				panel_y += unsolvable_warning.h + 16 + 10;
+			} else {
+				if (board_has_undetermined) {
+					set_color(renderer, 255u8, 225u8, 120u8);
+					fill_rect(renderer, panel_x, panel_y, undetermined_warning.w + 20, undetermined_warning.h + 16);
+					draw_text(renderer, undetermined_warning, panel_x + 10, panel_y + undetermined_warning.h / 2 + 8, false);
+					panel_y += undetermined_warning.h + 16 + 10;
+				}
+			}
+		}
 
 		SDL_RenderPresent(renderer);
 		SDL_Delay(16u32);
