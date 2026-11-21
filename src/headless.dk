@@ -96,9 +96,10 @@ fun check_example(ex: ref ExampleBoard) -> bool = {
 }
 
 fun uses(r: ref SolveResult, strategy: str) -> bool = {
+	let name = strategy.toString();
 	var i = 0;
 	while (i < r.steps.length()) {
-		if (r.steps.at(i).strategy == strategy) { return true; }
+		if (r.steps.at(i).strategy.toString() == name) { return true; }
 		i += 1;
 	}
 	return false;
@@ -106,25 +107,28 @@ fun uses(r: ref SolveResult, strategy: str) -> bool = {
 
 # Every strategy is shown by at least one example.
 fun check_coverage(examples: ref List[ExampleBoard]) -> bool = {
-	var results: List[SolveResult];
+	let strategies = all_strategies();
+	var covered: List[bool];
+	var k = 0;
+	while (k < strategies.length()) {
+		covered.push(false);
+		k += 1;
+	}
 	var i = 0;
 	while (i < examples.length()) {
 		var creator: Creator;
 		creator.load(examples.at(i).board);
-		results.push(creator.result);
+		k = 0;
+		while (k < strategies.length()) {
+			if (uses(&creator.result, strategies.at(k).name)) { covered.at(k) = true; }
+			k += 1;
+		}
 		i += 1;
 	}
 	var ok = true;
-	let strategies = all_strategies();
-	var k = 0;
+	k = 0;
 	while (k < strategies.length()) {
-		var covered = false;
-		i = 0;
-		while (i < results.length() and not covered) {
-			covered = uses(results.at(i), strategies.at(k).name);
-			i += 1;
-		}
-		ok = check(covered, f"no example uses {strategies.at(k).name}") and ok;
+		ok = check(covered.at(k), f"no example uses {strategies.at(k).name}".asSlice()) and ok;
 		k += 1;
 	}
 	return ok;
