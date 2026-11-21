@@ -49,6 +49,18 @@ fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
 	return m;
 }
 
+# The hardest strategy still needed: the highest difficulty among step_idx and the steps after it.
+fun remaining_difficulty(result: ref SolveResult, step_idx: i64) -> f64 = {
+	var max_difficulty: f64 = 0.0;
+	var i = step_idx;
+	while (i < result.steps.length()) {
+		let d = result.steps.at(i).difficulty;
+		if (d > max_difficulty) { max_difficulty = d; }
+		i += 1;
+	}
+	return max_difficulty;
+}
+
 # Drawing of individual marks (called from the match in StepView.draw).
 fun draw_unit_mark(renderer: cptr SDL_Renderer, m: UnitMark) = {
 	set_role_color(renderer, m.role);
@@ -119,6 +131,7 @@ class StepView {
 	solved: Text[10];   # entered by the solver in earlier steps
 	placed: Text[10];   # entered in the current step
 	small: Text[10];    # candidates
+	difficulty: Text;   # remaining difficulty indicator
 	header: Text;
 	body: Text;
 	shown: i64 = 0 - 1; # which step the header/body are currently built for
@@ -156,7 +169,7 @@ class StepView {
 		var i = 0;
 		while (i < move_lines.length()) { SDL_DestroyTexture(move_lines.at(i).tex); i += 1; }
 		move_lines.clear();
-		if (shown >= 0) { SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
+		if (shown >= 0) { SDL_DestroyTexture(difficulty.tex); SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
 		shown = 0 - 1;
 	}
 
@@ -209,7 +222,9 @@ class StepView {
 		let s = result.snapshots.at(step_idx);
 
 		if (shown != step_idx) {   # text is only re-rendered when the step changes
-			if (shown >= 0) { SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
+			if (shown >= 0) { SDL_DestroyTexture(difficulty.tex); SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
+			let diff = f"Remaining difficulty: {remaining_difficulty(result, step_idx)}";
+			difficulty = make_wrapped_text(renderer, font, &diff, 540u32);
 			let m = move_of(result, step_idx);
 			let h = f"Step {step_idx + 1}/{result.steps.length()} · move {m + 1}: {f.strategy}";
 			header = make_wrapped_text(renderer, font, &h, 540u32);
@@ -313,8 +328,9 @@ class StepView {
 		# Caption below the board (covers the editor's hint).
 		set_color(renderer, 245u8, 243u8, 236u8);
 		fill_rect(renderer, 0, ORIGIN + BOARD + 3, ORIGIN + BOARD + 10, HEIGHT);
-		draw_text(renderer, header, ORIGIN, ORIGIN + BOARD + 25, false);
-		draw_text(renderer, body, ORIGIN + 0, ORIGIN + BOARD + 50 + body.h / 2, false);
+		draw_text(renderer, difficulty, ORIGIN, ORIGIN + BOARD + 20, false);
+		draw_text(renderer, header, ORIGIN, ORIGIN + BOARD + 45, false);
+		draw_text(renderer, body, ORIGIN + 0, ORIGIN + BOARD + 70 + body.h / 2, false);
 
 		draw_panel(renderer, result, step_idx);
 	}

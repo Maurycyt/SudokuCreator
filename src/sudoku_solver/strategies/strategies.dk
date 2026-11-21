@@ -12,6 +12,7 @@ class CandRef { cell: CellCoord; digit: i64; }
 
 class Step {
 	strategy: String;             # strategy name (set by the solver)
+	difficulty: f64;              # difficulty of the strategy that produced this step (set by the solver)
 	text: String;                 # caption below the board
 	marks: List[Mark];            # what to color
 	placements: List[CandRef];    # placements (singles only)

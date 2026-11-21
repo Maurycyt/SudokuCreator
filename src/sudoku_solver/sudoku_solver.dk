@@ -52,6 +52,7 @@ class SudokuSolver {
 					while (k < steps.length()) {
 						var st = copy steps.at(k);
 						st.strategy = strategies.at(i).name.toString();
+						st.difficulty = strategies.at(i).difficulty;
 						r.snapshots.push(state);
 						r.steps.push(move st);
 						k += 1;
