@@ -1,11 +1,12 @@
 import core.builtins.*;
 import sdl2.*;
 import SudokuCreator.creator.*;
-import SudokuCreator.step_view.StepView;
+import SudokuCreator.step_view.*;
 
-# Sudoku Creator: a bare-bones board editor.
-# Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it.
-# On start an example is loaded and solved.
+# Sudoku Creator: a board editor with a live solvability heatmap.
+# Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it. Every edit
+# re-analyzes the board: empty cells the known strategies can currently fill in are tinted from
+# green (easy) to orange (hard); cells no known strategy can currently place are tinted red.
 # Space: solve and browse the steps (left/right = step, Esc = back). L: load example.
 
 const CELL = 60;
@@ -140,9 +141,23 @@ fun main() = {
 		set_color(renderer, 245u8, 243u8, 236u8);
 		let cleared = SDL_RenderClear(renderer);
 
-		# Board background and the selection.
+		# Board background, then live difficulty coloring of empty cells, then the selection.
 		set_color(renderer, 255u8, 255u8, 255u8);
 		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
+		if (not viewing) {
+			var diff_row = 0;
+			while (diff_row < 9) {
+				var diff_col = 0;
+				while (diff_col < 9) {
+					if (get_cell(diff_row, diff_col) == 0) {
+						set_difficulty_color(renderer, &cell_difficulty, diff_row, diff_col);
+						fill_rect(renderer, ORIGIN + diff_col * CELL, ORIGIN + diff_row * CELL, CELL, CELL);
+					}
+					diff_col += 1;
+				}
+				diff_row += 1;
+			}
+		}
 		set_color(renderer, 190u8, 215u8, 255u8);
 		fill_rect(renderer, ORIGIN + selected_col * CELL, ORIGIN + selected_row * CELL, CELL, CELL);
 

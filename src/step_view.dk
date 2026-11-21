@@ -8,6 +8,7 @@ import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.explanation.*;
 import src.sudoku_solver.strategies.*;
 import src.sudoku_solver.SolveResult;
+import src.sudoku_solver.difficulty.*;
 import src.multiset.*;
 
 # Solver step viewer (see DESIGN.md, chapter 13): draws the state BEFORE the move, plus the
@@ -22,6 +23,25 @@ fun set_role_color(renderer: cptr SDL_Renderer, role: i64) = {
 	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # orange
 	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # red
 	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # light green
+}
+
+# The editor's live view: a cell that can currently be placed is tinted on a gradient from
+# green (as easy as the easiest known strategy) to orange (as hard as the hardest known
+# strategy); a cell no known strategy can currently place is tinted red.
+fun set_difficulty_color(renderer: cptr SDL_Renderer, cd: ref CellDifficulty, row: i64, col: i64) = {
+	let d = cd.board[row][col];
+	if (d < 0.0) {
+		set_color(renderer, 255u8, 150u8, 150u8);      # red: not solvable by known strategies
+	} else {
+		var t: f64 = 0.0;
+		if (cd.max_known > cd.min_known) { t = (d - cd.min_known) / (cd.max_known - cd.min_known); }
+		if (t < 0.0) { t = 0.0; }
+		if (t > 1.0) { t = 1.0; }
+		let r = (150.0 + t * (255.0 - 150.0)) as u8;
+		let g = (235.0 + t * (210.0 - 235.0)) as u8;
+		let b = (160.0 + t * (150.0 - 160.0)) as u8;
+		set_color(renderer, r, g, b);
+	}
 }
 
 fun cell_x(c: CellCoord) -> i32 = ORIGIN + c.col * CELL;

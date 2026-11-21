@@ -20,7 +20,10 @@ fun find_full_house(s: ref SolverState) -> List[Step] = {
 			if (s.value(c) == 0) { empty = c; count += 1; }
 			k += 1;
 		}
-		if (count == 1) {
+		# A conflict elsewhere on the board (e.g. a duplicate the user just typed) can leave this
+		# cell with no candidate at all; first_candidate() then runs off the end at 10, which is
+		# not a real digit, so skip it rather than place a bogus one.
+		if (count == 1 and s.first_candidate(empty) <= 9) {
 			let d = s.first_candidate(empty);
 			sb.step(f"{unit_name(u)} has one empty cell left.");
 			sb.unit(u, Role.Unit);

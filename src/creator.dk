@@ -2,18 +2,29 @@ import core.builtins.*;
 import src.partial_sudoku.PartialSudoku;
 import src.sudoku_solver.SudokuSolver;
 import src.sudoku_solver.SolveResult;
+import src.sudoku_solver.difficulty.*;
 
 # Sudoku game state: a 9x9 table of cells. A cell's value is 0..9, where 0 means empty.
 
 var state: PartialSudoku;
-var solve_result: SolveResult;   # steps of the last try_solve(), for the step viewer
+var solve_result: SolveResult;         # steps of the last try_solve(), for the step viewer
+var cell_difficulty: CellDifficulty;   # live analysis of the current board, for the editor view
 
 fun set_cell(row: i64, col: i64, value: i64) = {
 	state.board[row][col].value = value;
+	analyze();
 }
 
 fun get_cell(row: i64, col: i64) =
 	state.board[row][col].value;
+
+# Re-runs the strategies against the current board and records, per empty cell, how hard it
+# would be to fill in right now. Called after every edit.
+fun analyze() = {
+	var solver = SudokuSolver.create(state);
+	let result = solver.solve();
+	cell_difficulty = analyze_difficulty(&result);
+}
 
 # Solves the current board with the strategies. true = there is something to show.
 fun try_solve() -> bool = {

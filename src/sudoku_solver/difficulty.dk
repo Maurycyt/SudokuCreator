@@ -1,0 +1,49 @@
+import core.containers.*;
+import src.sudoku_solver.units.*;
+import src.sudoku_solver.strategies.*;
+import src.sudoku_solver.*;
+
+# Per-cell solvability, for the live editor view: for each currently empty cell, how hard would
+# it be to fill it in right now, given only the cells already entered. A strategy does not have
+# to touch a cell to make it solvable indirectly through others, so this just replays a full
+# solve() and remembers, for every cell a step places, which strategy's difficulty did it.
+
+class CellDifficulty {
+	board: f64[9][9];  # a negative value means no known strategy can currently place that cell
+	min_known: f64;    # the easiest registered strategy's difficulty
+	max_known: f64;    # the hardest registered strategy's difficulty
+}
+
+fun analyze_difficulty(result: ref SolveResult) -> CellDifficulty = {
+	var cd: CellDifficulty;
+	var row = 0;
+	while (row < 9) {
+		var col = 0;
+		while (col < 9) { cd.board[row][col] = 0.0 - 1.0; col += 1; }
+		row += 1;
+	}
+
+	let strategies = all_strategies();
+	cd.min_known = strategies.at(0).difficulty;
+	cd.max_known = strategies.at(0).difficulty;
+	var s = 1;
+	while (s < strategies.length()) {
+		let d = strategies.at(s).difficulty;
+		if (d < cd.min_known) { cd.min_known = d; }
+		if (d > cd.max_known) { cd.max_known = d; }
+		s += 1;
+	}
+
+	var i = 0;
+	while (i < result.steps.length()) {
+		let st = result.steps.at(i);
+		var k = 0;
+		while (k < st.placements.length()) {
+			let p = st.placements.at(k);
+			cd.board[p.cell.row][p.cell.col] = st.difficulty;
+			k += 1;
+		}
+		i += 1;
+	}
+	return cd;
+}
