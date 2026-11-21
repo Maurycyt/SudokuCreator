@@ -1,0 +1,16 @@
+# Keep helper scripts and non-Duckling glue out of GitHub's language statistics.
+# The project itself is written in Duckling (*.dk), which Linguist doesn't recognise yet.
+
+# Helper / build scripts
+build.py linguist-vendored
+run.py linguist-vendored
+*.py linguist-vendored
+*.sh linguist-vendored
+tools/** linguist-vendored
+
+# Native FFI glue for the SDL2 wrapper (C shim and third-party headers)
+sdl2/shim/** linguist-vendored
+sdl2/c_bindings/** linguist-vendored
+
+# Generated Duckling bindings
+sdl2/src/generated/** linguist-generated
