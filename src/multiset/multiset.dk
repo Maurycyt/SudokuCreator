@@ -1,0 +1,169 @@
+import core.containers.*;
+import core.optional.*;
+
+# A multiset of `K`, backed by a self-balancing (AVL) binary search tree: adding, removing,
+# counting, and finding the minimum/maximum are all O(log n).
+#
+# Nodes live in a flat array (`nodes`) and reference each other by index (-1 = none) rather
+# than by pointer, since a templated class cannot hold a field whose type is its own
+# instantiation (there is no way to spell `box Multiset[K]` from inside `Multiset[K]` itself).
+
+template(K: type)
+class MultisetNode {
+	key: K;
+	count: i64;   # how many copies of `key` are stored at this node
+	height: i64;  # AVL height of this subtree
+	left: i64;    # index into the owning Multiset's `nodes`, or -1
+	right: i64;   # index into the owning Multiset's `nodes`, or -1
+}
+
+template(K: type)
+class Multiset {
+	nodes: List[MultisetNode[K]];
+	root: i64 = 0 - 1;
+
+	fun height_at(i: i64) -> i64 = if i < 0 then 0i64 else nodes.at(i).height;
+
+	fun balance_at(i: i64) -> i64 = height_at(nodes.at(i).left) - height_at(nodes.at(i).right);
+
+	fun update_height(i: i64) = {
+		let l = height_at(nodes.at(i).left);
+		let r = height_at(nodes.at(i).right);
+		nodes.at(i).height = (if l > r then l else r) + 1;
+	}
+
+	# The left child of i becomes the new subtree root.
+	fun rotate_right(i: i64) -> i64 = {
+		let l = nodes.at(i).left;
+		nodes.at(i).left = nodes.at(l).right;
+		nodes.at(l).right = i;
+		update_height(i);
+		update_height(l);
+		return l;
+	}
+
+	# The right child of i becomes the new subtree root.
+	fun rotate_left(i: i64) -> i64 = {
+		let r = nodes.at(i).right;
+		nodes.at(i).right = nodes.at(r).left;
+		nodes.at(r).left = i;
+		update_height(i);
+		update_height(r);
+		return r;
+	}
+
+	# Restores the AVL balance of subtree i (whose children are already balanced), returning
+	# the subtree's possibly new root.
+	fun rebalance(i: i64) -> i64 = {
+		update_height(i);
+		let b = balance_at(i);
+		if (b > 1) {
+			if (balance_at(nodes.at(i).left) < 0) { nodes.at(i).left = rotate_left(nodes.at(i).left); }
+			return rotate_right(i);
+		}
+		if (b < 0 - 1) {
+			if (balance_at(nodes.at(i).right) > 0) { nodes.at(i).right = rotate_right(nodes.at(i).right); }
+			return rotate_left(i);
+		}
+		return i;
+	}
+
+	fun insert(i: i64, key: K) -> i64 = {
+		if (i < 0) {
+			var n: MultisetNode[K];
+			n.key = key;
+			n.count = 1;
+			n.height = 1;
+			n.left = 0 - 1;
+			n.right = 0 - 1;
+			nodes.push(n);
+			return nodes.length() - 1;
+		}
+		if (key == nodes.at(i).key) {
+			nodes.at(i).count += 1;
+			return i;
+		}
+		# The recursive call may push new nodes and reallocate `nodes`, which would invalidate
+		# a `nodes.at(i)` reference taken before it returns. So its result is captured into a
+		# plain value first, and `nodes.at(i)` is only dereferenced again afterwards.
+		if (key < nodes.at(i).key) {
+			let new_left = insert(nodes.at(i).left, key);
+			nodes.at(i).left = new_left;
+		} else {
+			let new_right = insert(nodes.at(i).right, key);
+			nodes.at(i).right = new_right;
+		}
+		return rebalance(i);
+	}
+
+	# Adds one occurrence of `key`.
+	fun add(key: K) = { root = insert(root, key); }
+
+	fun find(i: i64, key: K) -> i64 = {
+		if (i < 0) { return 0 - 1; }
+		if (key == nodes.at(i).key) { return i; }
+		if (key < nodes.at(i).key) { return find(nodes.at(i).left, key); }
+		return find(nodes.at(i).right, key);
+	}
+
+	# How many copies of `key` are in the multiset.
+	fun count(key: K) -> i64 = {
+		let i = find(root, key);
+		if (i < 0) { return 0; }
+		return nodes.at(i).count;
+	}
+
+	fun min_index(i: i64) -> i64 = if nodes.at(i).left < 0 then i else min_index(nodes.at(i).left);
+	fun max_index(i: i64) -> i64 = if nodes.at(i).right < 0 then i else max_index(nodes.at(i).right);
+
+	# The smallest key in the multiset, or none if it is empty.
+	fun min() -> ?K = {
+		if (root < 0) { return none; }
+		return nodes.at(min_index(root)).key;
+	}
+
+	# The largest key in the multiset, or none if it is empty.
+	fun max() -> ?K = {
+		if (root < 0) { return none; }
+		return nodes.at(max_index(root)).key;
+	}
+
+	# Removes the node holding the minimum key of subtree i, returning the new subtree root
+	# and writing that node's former data into `out`.
+	fun remove_min(i: i64, out: ref MultisetNode[K]) -> i64 = {
+		if (nodes.at(i).left < 0) {
+			out = nodes.at(i);
+			return nodes.at(i).right;
+		}
+		nodes.at(i).left = remove_min(nodes.at(i).left, out);
+		return rebalance(i);
+	}
+
+	# Removes one occurrence of `key` from subtree i, returning the new subtree root. A no-op
+	# if `key` is not present.
+	fun delete(i: i64, key: K) -> i64 = {
+		if (i < 0) { return i; }
+		if (key < nodes.at(i).key) {
+			nodes.at(i).left = delete(nodes.at(i).left, key);
+			return rebalance(i);
+		}
+		if (key > nodes.at(i).key) {
+			nodes.at(i).right = delete(nodes.at(i).right, key);
+			return rebalance(i);
+		}
+		if (nodes.at(i).count > 1) {
+			nodes.at(i).count -= 1;
+			return i;
+		}
+		if (nodes.at(i).left < 0) { return nodes.at(i).right; }
+		if (nodes.at(i).right < 0) { return nodes.at(i).left; }
+		var successor: MultisetNode[K];
+		nodes.at(i).right = remove_min(nodes.at(i).right, &successor);
+		nodes.at(i).key = successor.key;
+		nodes.at(i).count = successor.count;
+		return rebalance(i);
+	}
+
+	# Removes one occurrence of `key`. A no-op if `key` is not present.
+	fun remove(key: K) = { root = delete(root, key); }
+}

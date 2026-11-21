@@ -1,5 +1,6 @@
 import core.builtins.*;
 import core.containers.*;
+import core.optional.*;
 import sdl2.*;
 import SudokuCreator.*;
 import src.sudoku_solver.units.*;
@@ -7,6 +8,7 @@ import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.explanation.*;
 import src.sudoku_solver.strategies.*;
 import src.sudoku_solver.SolveResult;
+import src.multiset.*;
 
 # Solver step viewer (see DESIGN.md, chapter 13): draws the state BEFORE the move, plus the
 # coloring and caption for that step.
@@ -49,16 +51,29 @@ fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
 	return m;
 }
 
-# The hardest strategy still needed: the highest difficulty among step_idx and the steps after it.
+# Snaps a difficulty back onto the 0.1 grid, so repeated +0.1 merges below don't drift off it.
+fun round_tenth(x: f64) -> f64 = ((x * 10.0 + 0.5) as i64) as f64 / 10.0;
+
+# The hardest strategy still needed, once equally-hard remaining steps have been combined:
+# collect step_idx and the steps after it into a multiset of their difficulties, then as long as
+# two steps share a difficulty X, combine them into one step of difficulty X + 0.1 (so several
+# easy steps are a little harder than just one, and the total gently decreases while solving).
+# The answer is the hardest difficulty left once no two remaining steps are tied.
 fun remaining_difficulty(result: ref SolveResult, step_idx: i64) -> f64 = {
-	var max_difficulty: f64 = 0.0;
+	var ms: Multiset[f64];
 	var i = step_idx;
 	while (i < result.steps.length()) {
-		let d = result.steps.at(i).difficulty;
-		if (d > max_difficulty) { max_difficulty = d; }
+		var v = round_tenth(result.steps.at(i).difficulty);
+		ms.add(v);
+		while (ms.count(v) >= 2) {
+			ms.remove(v);
+			ms.remove(v);
+			v = round_tenth(v + 0.1);
+			ms.add(v);
+		}
 		i += 1;
 	}
-	return max_difficulty;
+	return optional_primitives.by_value.valueOr[f64](ms.max(), 0.0);
 }
 
 # Drawing of individual marks (called from the match in StepView.draw).
