@@ -1,0 +1,9 @@
+import src.partial_sudoku.PartialSudoku;
+import solver_state.SolverState;
+
+class SudokuSolver {
+	state: SolverState;
+
+	global fun create(partial: PartialSudoku) =
+		SudokuSolver(SolverState.create(partial));
+}

@@ -1,0 +1,7 @@
+import sudoku_solver.solver_state.SolverState;
+
+class Strategy {
+	const Applicative = funptr(ref SolverState) -> bool;
+
+	apply: Applicative;
+}

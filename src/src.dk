@@ -1,221 +1,176 @@
 import core.builtins.*;
 import sdl2.*;
-import SudokuCreator.sudoku.*;
+import SudokuCreator.creator.*;
 
-# Sudoku Creator: generates a puzzle with a unique solution and lets you solve it.
-# Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it, N or the
-# button makes a new puzzle.
+# Sudoku Creator: a bare-bones board editor.
+# Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it.
 
-const CELL: i32 = 60i32;
-const ORIGIN: i32 = 20i32;
-const BOARD: i32 = 540i32;
-const WIDTH: i32 = 580i32;
-const HEIGHT: i32 = 660i32;
-const BUTTON_X: i32 = 20i32;
-const BUTTON_Y: i32 = 580i32;
-const BUTTON_W: i32 = 180i32;
-const BUTTON_H: i32 = 50i32;
-const CLUES: i64 = 30;
+const CELL = 60;
+const ORIGIN = 20;
+const BOARD = 540;
+const WIDTH = 580;
+const HEIGHT = 600;
 
 class Text {
-    tex: cptr SDL_Texture;
-    w: i32;
-    h: i32;
+	tex: cptr SDL_Texture;
+	w: i32;
+	h: i32;
 }
 
 fun cstr(s: str) -> cptr char = builtins.ptr_from_slice[char](s) as cptr char;
 
 fun make_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, text: cptr char, r: u8, g: u8, b: u8) -> Text = {
-    var color: SDL_Color;
-    color.r = r;
-    color.g = g;
-    color.b = b;
-    color.a = 255u8;
-    let surface = dk_TTF_RenderUTF8_Blended(font, text, &color as cptr SDL_Color);
-    var result: Text;
-    result.w = surface[0].w;
-    result.h = surface[0].h;
-    result.tex = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_FreeSurface(surface);
-    return result;
+	var color: SDL_Color;
+	color.r = r;
+	color.g = g;
+	color.b = b;
+	color.a = 255u8;
+	let surface = dk_TTF_RenderUTF8_Blended(font, text, &color as cptr SDL_Color);
+	var result: Text;
+	result.w = surface[0].w;
+	result.h = surface[0].h;
+	result.tex = SDL_CreateTextureFromSurface(renderer, surface);
+	SDL_FreeSurface(surface);
+	return result;
 }
 
 fun digit_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, d: i64, r: u8, g: u8, b: u8) -> Text = {
-    var buf: u8[2];
-    buf[0] = (48 + d) as u8;
-    buf[1] = 0u8;
-    return make_text(renderer, font, &buf as cptr char, r, g, b);
+	var buf: u8[2];
+	buf[0] = (48 + d) as u8;
+	buf[1] = 0u8;
+	return make_text(renderer, font, &buf as cptr char, r, g, b);
 }
 
 # Draws `t` centered at (cx, cy), or with its left edge at cx when `centered` is false.
 fun draw_text(renderer: cptr SDL_Renderer, t: Text, cx: i32, cy: i32, centered: bool) = {
-    var dst: SDL_Rect;
-    dst.x = cx;
-    if (centered) { dst.x = cx - t.w / 2i32; }
-    dst.y = cy - t.h / 2i32;
-    dst.w = t.w;
-    dst.h = t.h;
-    var src: SDL_Rect;
-    src.x = 0i32;
-    src.y = 0i32;
-    src.w = t.w;
-    src.h = t.h;
-    let copied = SDL_RenderCopy(renderer, t.tex, &src as cptr SDL_Rect, &dst as cptr SDL_Rect);
+	var dst: SDL_Rect;
+	dst.x = cx;
+	if (centered) { dst.x = cx - t.w / 2; }
+	dst.y = cy - t.h / 2;
+	dst.w = t.w;
+	dst.h = t.h;
+	var src: SDL_Rect;
+	src.x = 0;
+	src.y = 0;
+	src.w = t.w;
+	src.h = t.h;
+	let copied = SDL_RenderCopy(renderer, t.tex, &src as cptr SDL_Rect, &dst as cptr SDL_Rect);
 }
 
 fun fill_rect(renderer: cptr SDL_Renderer, x: i32, y: i32, w: i32, h: i32) = {
-    var rect: SDL_Rect;
-    rect.x = x;
-    rect.y = y;
-    rect.w = w;
-    rect.h = h;
-    let filled = SDL_RenderFillRect(renderer, &rect as cptr SDL_Rect);
+	var rect: SDL_Rect;
+	rect.x = x;
+	rect.y = y;
+	rect.w = w;
+	rect.h = h;
+	let filled = SDL_RenderFillRect(renderer, &rect as cptr SDL_Rect);
 }
 
 fun set_color(renderer: cptr SDL_Renderer, r: u8, g: u8, b: u8) = {
-    let set = SDL_SetRenderDrawColor(renderer, r, g, b, 255u8);
+	let set = SDL_SetRenderDrawColor(renderer, r, g, b, 255u8);
 }
 
-fun main() -> i64 = {
-    if (SDL_Init(SDL_INIT_VIDEO) != 0i32) { return 1i64; }
-    if (TTF_Init() != 0i32) { return 2i64; }
-    let pos = SDL_WINDOWPOS_CENTERED as i32;
-    let window = SDL_CreateWindow(cstr("Sudoku Creator\0"), pos, pos, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
-    let renderer = SDL_CreateRenderer(window, 0i32 - 1i32, 0u32);
-    let font = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 36i32);
-    let small = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 18i32);
-    if (font as u64 == 0u64) { return 3i64; }
+fun main() = {
+	if (SDL_Init(SDL_INIT_VIDEO) != 0) { return 1; }
+	if (TTF_Init() != 0) { return 2; }
+	let pos = SDL_WINDOWPOS_CENTERED as i32;
+	let window = SDL_CreateWindow(cstr("Sudoku Creator\0"), pos, pos, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
+	let renderer = SDL_CreateRenderer(window, 0 - 1, 0u32);
+	let font = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 36);
+	let small = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 18);
+	if (font as u64 == 0u64) { return 3; }
 
-    # Digits 1..9 in three colours: given (black), entered (blue), conflicting (red).
-    var given_digits: Text[10];
-    var user_digits: Text[10];
-    var bad_digits: Text[10];
-    var d: i64 = 1;
-    while (d <= 9) {
-        given_digits[d] = digit_text(renderer, font, d, 20u8, 20u8, 20u8);
-        user_digits[d] = digit_text(renderer, font, d, 40u8, 90u8, 200u8);
-        bad_digits[d] = digit_text(renderer, font, d, 210u8, 40u8, 40u8);
-        d = d + 1;
-    }
-    let button_label = make_text(renderer, small, cstr("Nowe sudoku (N)\0"), 255u8, 255u8, 255u8);
-    let help = make_text(renderer, small, cstr("Kliknij pole i wpisz 1-9\0"), 90u8, 90u8, 90u8);
-    let solved = make_text(renderer, small, cstr("Rozwiązane! Brawo!\0"), 30u8, 140u8, 60u8);
+	var digits: Text[10];
+	var d = 1;
+	while (d <= 9) {
+		digits[d] = digit_text(renderer, font, d, 40u8, 90u8, 200u8);
+		d = d + 1;
+	}
+	let help = make_text(renderer, small, cstr("Kliknij pole i wpisz 1-9\0"), 90u8, 90u8, 90u8);
 
-    seed_rng(SDL_GetTicks() as i64 + 7);
-    generate(CLUES);
-    var selected: i64 = 40;
+	var selected_row = 4;
+	var selected_col = 4;
 
-    var event: SDL_Event;
-    let ev = &event as cptr SDL_Event;
-    var running = true;
-    while (running) {
-        while (SDL_PollEvent(ev) != 0i32) {
-            let kind = SDL_Event_as_type(ev)[0];
-            if (kind == SDL_QUIT) { running = false; }
-            if (kind == SDL_MOUSEBUTTONDOWN) {
-                let x = SDL_Event_as_button(ev)[0].x;
-                let y = SDL_Event_as_button(ev)[0].y;
-                if (ORIGIN <= x and x < ORIGIN + BOARD and ORIGIN <= y and y < ORIGIN + BOARD) {
-                    selected = ((y - ORIGIN) / CELL) as i64 * 9 + ((x - ORIGIN) / CELL) as i64;
-                }
-                if (BUTTON_X <= x and x < BUTTON_X + BUTTON_W and BUTTON_Y <= y and y < BUTTON_Y + BUTTON_H) {
-                    seed_rng(SDL_GetTicks() as i64);
-                    generate(CLUES);
-                }
-            }
-            if (kind == SDL_KEYDOWN) {
-                let key = SDL_Event_as_key(ev)[0].keysym.sym as u32;
-                if (SDLK_1 <= key and key <= SDLK_9) { set_cell(selected, (key - SDLK_0) as i64); }
-                if (SDLK_KP_1 <= key and key <= SDLK_KP_9) { set_cell(selected, (key - SDLK_KP_1) as i64 + 1); }
-                if (key == SDLK_0 or key == SDLK_BACKSPACE or key == SDLK_DELETE) { set_cell(selected, 0); }
-                if (key == SDLK_UP and selected >= 9) { selected = selected - 9; }
-                if (key == SDLK_DOWN and selected < 72) { selected = selected + 9; }
-                if (key == SDLK_LEFT and selected % 9 > 0) { selected = selected - 1; }
-                if (key == SDLK_RIGHT and selected % 9 < 8) { selected = selected + 1; }
-                if (key == SDLK_n) {
-                    seed_rng(SDL_GetTicks() as i64);
-                    generate(CLUES);
-                }
-                if (key == SDLK_ESCAPE) { running = false; }
-            }
-        }
+	var event: SDL_Event;
+	let ev = &event as cptr SDL_Event;
+	var running = true;
+	while (running) {
+		while (SDL_PollEvent(ev) != 0) {
+			let kind = SDL_Event_as_type(ev)[0];
+			if (kind == SDL_QUIT) { running = false; }
+			if (kind == SDL_MOUSEBUTTONDOWN) {
+				let x = SDL_Event_as_button(ev)[0].x;
+				let y = SDL_Event_as_button(ev)[0].y;
+				if (ORIGIN <= x and x < ORIGIN + BOARD and ORIGIN <= y and y < ORIGIN + BOARD) {
+					selected_row = (y - ORIGIN) / CELL;
+					selected_col = (x - ORIGIN) / CELL;
+				}
+			}
+			if (kind == SDL_KEYDOWN) {
+				let key = SDL_Event_as_key(ev)[0].keysym.sym as u32;
+				if (SDLK_1 <= key and key <= SDLK_9) { set_cell(selected_row, selected_col, key - SDLK_0); }
+				if (SDLK_KP_1 <= key and key <= SDLK_KP_9) { set_cell(selected_row, selected_col, key - SDLK_KP_1 + 1u32); }
+				if (key == SDLK_0 or key == SDLK_BACKSPACE or key == SDLK_DELETE) { set_cell(selected_row, selected_col, 0); }
+				if (key == SDLK_UP and selected_row > 0) { selected_row = selected_row - 1; }
+				if (key == SDLK_DOWN and selected_row < 8) { selected_row = selected_row + 1; }
+				if (key == SDLK_LEFT and selected_col > 0) { selected_col = selected_col - 1; }
+				if (key == SDLK_RIGHT and selected_col < 8) { selected_col = selected_col + 1; }
+				if (key == SDLK_ESCAPE) { running = false; }
+			}
+		}
 
-        set_color(renderer, 245u8, 243u8, 236u8);
-        let cleared = SDL_RenderClear(renderer);
+		set_color(renderer, 245u8, 243u8, 236u8);
+		let cleared = SDL_RenderClear(renderer);
 
-        # Board background, given cells and the selection.
-        set_color(renderer, 255u8, 255u8, 255u8);
-        fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
-        var i: i64 = 0;
-        while (i < 81) {
-            let cx = ORIGIN + (i % 9) as i32 * CELL;
-            let cy = ORIGIN + (i / 9) as i32 * CELL;
-            if (given[i]) {
-                set_color(renderer, 232u8, 232u8, 226u8);
-                fill_rect(renderer, cx, cy, CELL, CELL);
-            }
-            if (i == selected) {
-                set_color(renderer, 190u8, 215u8, 255u8);
-                fill_rect(renderer, cx, cy, CELL, CELL);
-            }
-            i = i + 1;
-        }
+		# Board background and the selection.
+		set_color(renderer, 255u8, 255u8, 255u8);
+		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
+		set_color(renderer, 190u8, 215u8, 255u8);
+		fill_rect(renderer, ORIGIN + selected_col * CELL, ORIGIN + selected_row * CELL, CELL, CELL);
 
-        # Grid lines: thin between cells, thick around boxes.
-        var line: i64 = 0;
-        while (line <= 9) {
-            let offset = ORIGIN + line as i32 * CELL;
-            if (line % 3 == 0) {
-                set_color(renderer, 30u8, 30u8, 30u8);
-                fill_rect(renderer, offset - 1i32, ORIGIN - 1i32, 3i32, BOARD + 3i32);
-                fill_rect(renderer, ORIGIN - 1i32, offset - 1i32, BOARD + 3i32, 3i32);
-            } else {
-                set_color(renderer, 180u8, 180u8, 180u8);
-                fill_rect(renderer, offset, ORIGIN, 1i32, BOARD);
-                fill_rect(renderer, ORIGIN, offset, BOARD, 1i32);
-            }
-            line = line + 1;
-        }
+		# Grid lines: thin between cells, thick around boxes.
+		var line = 0;
+		while (line <= 9) {
+			let offset = ORIGIN + line * CELL;
+			if (line % 3 == 0) {
+				set_color(renderer, 30u8, 30u8, 30u8);
+				fill_rect(renderer, offset - 1, ORIGIN - 1, 3, BOARD + 3);
+				fill_rect(renderer, ORIGIN - 1, offset - 1, BOARD + 3, 3);
+			} else {
+				set_color(renderer, 180u8, 180u8, 180u8);
+				fill_rect(renderer, offset, ORIGIN, 1, BOARD);
+				fill_rect(renderer, ORIGIN, offset, BOARD, 1);
+			}
+			line = line + 1;
+		}
 
-        # Digits.
-        i = 0;
-        while (i < 81) {
-            let v = grid[i];
-            if (v != 0) {
-                let cx = ORIGIN + (i % 9) as i32 * CELL + CELL / 2i32;
-                let cy = ORIGIN + (i / 9) as i32 * CELL + CELL / 2i32;
-                if (given[i]) {
-                    draw_text(renderer, given_digits[v], cx, cy, true);
-                } else {
-                    if (is_conflict(i)) {
-                        draw_text(renderer, bad_digits[v], cx, cy, true);
-                    } else {
-                        draw_text(renderer, user_digits[v], cx, cy, true);
-                    }
-                }
-            }
-            i = i + 1;
-        }
+		# Digits.
+		var row = 0;
+		while (row < 9) {
+			var col = 0;
+			while (col < 9) {
+				let v = get_cell(row, col);
+				if (v != 0) {
+					let cx = ORIGIN + col * CELL + CELL / 2;
+					let cy = ORIGIN + row * CELL + CELL / 2;
+					draw_text(renderer, digits[v], cx, cy, true);
+				}
+				col = col + 1;
+			}
+			row = row + 1;
+		}
 
-        # Button and status line.
-        set_color(renderer, 50u8, 110u8, 200u8);
-        fill_rect(renderer, BUTTON_X, BUTTON_Y, BUTTON_W, BUTTON_H);
-        draw_text(renderer, button_label, BUTTON_X + BUTTON_W / 2i32, BUTTON_Y + BUTTON_H / 2i32, true);
-        if (is_solved()) {
-            draw_text(renderer, solved, BUTTON_X + BUTTON_W + 20i32, BUTTON_Y + BUTTON_H / 2i32, false);
-        } else {
-            draw_text(renderer, help, BUTTON_X + BUTTON_W + 20i32, BUTTON_Y + BUTTON_H / 2i32, false);
-        }
+		draw_text(renderer, help, ORIGIN, ORIGIN + BOARD + 20, false);
 
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16u32);
-    }
+		SDL_RenderPresent(renderer);
+		SDL_Delay(16u32);
+	}
 
-    TTF_CloseFont(font);
-    TTF_CloseFont(small);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    TTF_Quit();
-    SDL_Quit();
-    return 0i64;
+	TTF_CloseFont(font);
+	TTF_CloseFont(small);
+	SDL_DestroyRenderer(renderer);
+	SDL_DestroyWindow(window);
+	TTF_Quit();
+	SDL_Quit();
+	return 0i64;
 }

@@ -1,0 +1,7 @@
+class PartialSudoku {
+	class Cell {
+		value: i64;
+	}
+
+	board: Cell[9][9];
+}

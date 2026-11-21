@@ -1,0 +1,13 @@
+import src.partial_sudoku.PartialSudoku;
+
+class SolverState {
+	class Cell {
+		candidates: u8[9];
+	}
+
+	board: Cell[9][9];
+
+	global fun create(partial: PartialSudoku) -> SolverState = {
+		# unimplemented
+	}
+}
