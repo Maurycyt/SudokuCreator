@@ -1,0 +1,85 @@
+import core.builtins.*;
+import core.containers.*;
+import SudokuCreator.creator.*;
+import SudokuCreator.step_view.*;
+
+# A headless diagnostic mode: no window, no SDL, just the solver/analysis pipeline exercised
+# against the example library and dumped to stdout. Set SUDOKU_HEADLESS (to anything) to use it,
+# e.g. `SUDOKU_HEADLESS=1 duck run`. Exits 0 if every example checks out, 1 otherwise, so it also
+# doubles as a quick regression check after changing a strategy.
+
+extern("C") {
+	fundecl getenv(name: cptr char) -> cptr u8;
+}
+
+fun headless_requested() -> bool =
+	getenv(builtins.ptr_from_slice[char]("SUDOKU_HEADLESS\0") as cptr char) as u64 != 0u64;
+
+# One row of the board: the given digit, '.' for an empty cell the strategies can place, or '?'
+# for one they can't (whatever the difficulty gradient would leave white in the editor).
+fun board_row(row: i64) -> String = {
+	var line: String;
+	var col = 0;
+	while (col < 9) {
+		let v = get_cell(row, col);
+		if (v != 0) {
+			line.append((48 + v) as char);
+		} else {
+			if (cell_difficulty.board[row][col] < 0.0) { line.append('?'); } else { line.append('.'); }
+		}
+		col += 1;
+	}
+	return line;
+}
+
+fun check_example(ex: ExampleBoard) -> bool = {
+	load_board(ex.board);
+	let had_steps = try_solve();
+
+	var max_used: f64 = 0.0 - 1.0;
+	var i = 0;
+	while (i < solve_result.steps.length()) {
+		let d = solve_result.steps.at(i).difficulty;
+		if (d > max_used) { max_used = d; }
+		i += 1;
+	}
+
+	print(f"== {ex.name} ==");
+	print('\n');
+	print(f"stuck={solve_result.stuck} steps={solve_result.steps.length()} board_unsolvable={board_unsolvable} board_has_undetermined={board_has_undetermined}");
+	print('\n');
+	print(f"hardest strategy used={max_used} (expected at most {ex.max_difficulty})");
+	print('\n');
+	print(f"remaining difficulty at the start={remaining_difficulty(&solve_result, 0)}");
+	print('\n');
+	var row = 0;
+	while (row < 9) {
+		print(board_row(row).asSlice());
+		print('\n');
+		row += 1;
+	}
+
+	var ok = true;
+	if (solve_result.stuck) { print("FAIL: did not fully solve\n"); ok = false; }
+	if (max_used > ex.max_difficulty) { print("FAIL: needed a harder strategy than expected\n"); ok = false; }
+	print('\n');
+	return ok;
+}
+
+fun run_headless() -> i64 = {
+	var all_ok = true;
+	let examples = example_boards();
+	var i = 0;
+	while (i < examples.length()) {
+		if (not check_example(examples.at(i))) { all_ok = false; }
+		i += 1;
+	}
+
+	load_example();
+	if (all_ok) {
+		print("ALL EXAMPLES OK\n");
+		return 0i64;
+	}
+	print("SOME EXAMPLES FAILED\n");
+	return 1i64;
+}
