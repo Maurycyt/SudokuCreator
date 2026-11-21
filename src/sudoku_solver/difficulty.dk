@@ -43,10 +43,13 @@ fun analyze_difficulty(result: ref SolveResult) -> CellDifficulty = {
 	return cd;
 }
 
-# A direct, provable contradiction: either two cells in the same unit are already given the
-# same digit, or some empty cell has no candidate left at all. Either way, the board as entered
-# has no solution, regardless of how many strategies are known.
-fun has_direct_contradiction(s: ref SolverState) -> bool = {
+# A provable contradiction in `s`: either two cells in a unit already hold the same digit, or
+# some empty cell has no candidate left at all. Both are proof the board has no solution — but
+# the second can easily be true of `s` without being true of the raw given digits alone, since a
+# chain of otherwise-sound eliminations (singles, X-Wing, ...) can be what drove a cell's
+# candidates to zero. So this should be checked against the state a solve() leaves behind, not
+# a fresh one, or such contradictions go unnoticed.
+fun has_contradiction(s: ref SolverState) -> bool = {
 	var u = 0;
 	while (u < 27) {
 		var seen: bool[10];

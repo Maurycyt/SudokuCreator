@@ -181,6 +181,7 @@ class StepView {
 	move_lines: List[Text];  # "12. Hidden Single" for each move, built on first draw
 	title: Text;
 	legend: Text[7];         # descriptions of the role colors
+	no_candidates_legend: Text;
 	keys_help: Text;
 
 	global fun create(renderer: cptr SDL_Renderer, big: cptr TTF_Font, small_font: cptr TTF_Font) -> StepView = {
@@ -202,6 +203,7 @@ class StepView {
 		v.legend[Role.Target] = make_text(renderer, small_font, cstr("target cell\0"), 60u8, 60u8, 60u8);
 		v.legend[Role.Eliminated] = make_text(renderer, small_font, cstr("candidate being crossed out\0"), 60u8, 60u8, 60u8);
 		v.legend[Role.Placed] = make_text(renderer, small_font, cstr("digit being entered\0"), 60u8, 60u8, 60u8);
+		v.no_candidates_legend = make_text(renderer, small_font, cstr("cell with no candidates left (contradiction)\0"), 60u8, 60u8, 60u8);
 		v.keys_help = make_text(renderer, small_font, cstr("←/→ step   Esc editor\0"), 90u8, 90u8, 90u8);
 		return v;
 	}
@@ -255,6 +257,10 @@ class StepView {
 			y += 24;
 			r += 1;
 		}
+		set_color(renderer, 255u8, 130u8, 130u8);
+		fill_rect(renderer, x, y, 18, 18);
+		draw_text(renderer, no_candidates_legend, x + 28, y + 9, false);
+		y += 24;
 		draw_text(renderer, keys_help, x, y + 16, false);
 	}
 
@@ -262,6 +268,7 @@ class StepView {
 		let f = result.steps.at(step_idx);
 		let step = f;
 		let s = result.snapshots.at(step_idx);
+		let cells = all_cells();
 
 		if (shown != step_idx) {   # text is only re-rendered when the step changes
 			if (shown >= 0) { SDL_DestroyTexture(difficulty.tex); SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
@@ -294,6 +301,19 @@ class StepView {
 			i += 1;
 		}
 
+		# A cell with every candidate eliminated is a direct contradiction: mark it red, on top
+		# of whatever role mark it might also have, since this is the one thing that always needs
+		# to stand out.
+		var ci0 = 0;
+		while (ci0 < cells.length()) {
+			let c = cells.at(ci0);
+			if (s.value(c) == 0 and s.count(c) == 0) {
+				set_color(renderer, 255u8, 130u8, 130u8);
+				fill_rect(renderer, cell_x(c), cell_y(c), CELL, CELL);
+			}
+			ci0 += 1;
+		}
+
 		# Grid (same as in the editor).
 		var line = 0;
 		while (line <= 9) {
@@ -321,7 +341,6 @@ class StepView {
 		}
 
 		# Digits: given / previously entered / being entered now (green, via CellMark{Placed}).
-		let cells = all_cells();
 		var ci = 0;
 		while (ci < cells.length()) {
 			let c = cells.at(ci);
