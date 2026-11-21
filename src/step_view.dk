@@ -16,7 +16,7 @@ fun set_role_color(renderer: cptr SDL_Renderer, role: i64) = {
 	if (role == Role.Unit) { set_color(renderer, 255u8, 244u8, 200u8); }        # light yellow
 	if (role == Role.Excluded) { set_color(renderer, 215u8, 230u8, 255u8); }    # light blue
 	if (role == Role.Excluder) { set_color(renderer, 125u8, 170u8, 250u8); }    # strong blue
-	if (role == Role.Pattern) { set_color(renderer, 140u8, 220u8, 140u8); }     # green
+	if (role == Role.Pattern) { set_color(renderer, 200u8, 170u8, 235u8); }     # lavender
 	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # orange
 	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # red
 	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # light green

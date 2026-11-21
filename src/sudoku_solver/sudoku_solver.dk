@@ -3,6 +3,7 @@ import src.partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
 import strategies.*;
 import strategies.singles.*;
+import strategies.x_wing.*;
 
 # Registry, easiest first. A new strategy = one line here.
 fun all_strategies() -> List[Strategy] = {
@@ -10,6 +11,7 @@ fun all_strategies() -> List[Strategy] = {
 	s.push(Strategy("Full House", 1.0, find_full_house));
 	s.push(Strategy("Hidden Single", 1.2, find_hidden_single));
 	s.push(Strategy("Naked Single", 2.3, find_naked_single));
+	s.push(Strategy("X-Wing", 3.5, find_x_wing));
 	return s;
 }
 

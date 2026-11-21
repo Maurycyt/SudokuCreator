@@ -6,7 +6,7 @@ import SudokuCreator.step_view.StepView;
 # Sudoku Creator: a bare-bones board editor.
 # Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it.
 # On start an example is loaded and solved.
-# S: solve and browse the steps (left/right = step, Esc = back). L: load example.
+# Space: solve and browse the steps (left/right = step, Esc = back). L: load example.
 
 const CELL = 60;
 const ORIGIN = 20;
@@ -89,7 +89,7 @@ fun main() = {
 		digits[d] = digit_text(renderer, font, d, 40u8, 90u8, 200u8);
 		d = d + 1;
 	}
-	let help = make_text(renderer, small, cstr("Click a cell and type 1-9 · S: solve · L: example\0"), 90u8, 90u8, 90u8);
+	let help = make_text(renderer, small, cstr("Click a cell and type 1-9 · Space: solve · L: example\0"), 90u8, 90u8, 90u8);
 
 	var selected_row = 4;
 	var selected_col = 4;
@@ -123,7 +123,7 @@ fun main() = {
 					if (key == SDLK_LEFT and step_idx > 0) { step_idx -= 1; }
 					if (key == SDLK_ESCAPE) { viewing = false; }
 				} else {
-					if (key == SDLK_s and try_solve()) { view.reset(); viewing = true; step_idx = 0; }
+					if (key == SDLK_SPACE and try_solve()) { view.reset(); viewing = true; step_idx = 0; }
 					if (key == SDLK_l) { load_example(); }
 					if (SDLK_1 <= key and key <= SDLK_9) { set_cell(selected_row, selected_col, key - SDLK_0); }
 					if (SDLK_KP_1 <= key and key <= SDLK_KP_9) { set_cell(selected_row, selected_col, key - SDLK_KP_1 + 1u32); }
