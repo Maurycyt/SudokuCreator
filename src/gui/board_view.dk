@@ -1,5 +1,5 @@
 import core.optional.*;
-import SudokuCreator.graphics.*;
+import SudokuCreator.gui.graphics.*;
 import SudokuCreator.sudoku_solver.units.*;
 
 # Window layout and the board drawing shared by all views.

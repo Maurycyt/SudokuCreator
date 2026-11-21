@@ -1,6 +1,6 @@
 import sdl2.*;
-import SudokuCreator.graphics.*;
-import SudokuCreator.board_view.*;
+import SudokuCreator.gui.graphics.*;
+import SudokuCreator.gui.board_view.*;
 import SudokuCreator.creator.Creator;
 import SudokuCreator.sudoku_solver.units.*;
 

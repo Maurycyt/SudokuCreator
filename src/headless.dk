@@ -2,7 +2,7 @@ import core.builtins.*;
 import core.containers.*;
 import core.optional.*;
 import SudokuCreator.creator.Creator;
-import SudokuCreator.examples.*;
+import SudokuCreator.creator.examples.*;
 import SudokuCreator.multiset.*;
 import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.SolveResult;

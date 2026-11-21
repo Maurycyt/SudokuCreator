@@ -1,6 +1,6 @@
 import core.containers.*;
 import core.optional.*;
-import SudokuCreator.partial_sudoku.PartialSudoku;
+import SudokuCreator.sudoku_solver.partial_sudoku.PartialSudoku;
 import SudokuCreator.sudoku_solver.units.*;
 
 const ALL_CANDIDATES = 1022i64;  # bits 1..9

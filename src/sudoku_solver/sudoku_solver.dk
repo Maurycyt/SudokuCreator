@@ -1,5 +1,5 @@
 import core.containers.*;
-import SudokuCreator.partial_sudoku.PartialSudoku;
+import partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
 import strategies.*;
 import strategies.singles.*;

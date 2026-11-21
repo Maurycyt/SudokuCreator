@@ -1,4 +1,4 @@
-import SudokuCreator.partial_sudoku.PartialSudoku;
+import SudokuCreator.sudoku_solver.partial_sudoku.PartialSudoku;
 import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.SudokuSolver;
 import SudokuCreator.sudoku_solver.SolveResult;

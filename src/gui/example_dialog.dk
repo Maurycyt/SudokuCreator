@@ -1,8 +1,8 @@
 import core.containers.*;
 import sdl2.*;
-import SudokuCreator.graphics.*;
-import SudokuCreator.board_view.*;
-import SudokuCreator.examples.ExampleBoard;
+import SudokuCreator.gui.graphics.*;
+import SudokuCreator.gui.board_view.*;
+import SudokuCreator.creator.examples.ExampleBoard;
 
 # Lists the example boards over the board area, one per key 1-9.
 class ExampleDialog {

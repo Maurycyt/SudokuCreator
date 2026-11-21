@@ -1,7 +1,7 @@
 import core.containers.*;
 import sdl2.*;
-import SudokuCreator.graphics.*;
-import SudokuCreator.board_view.*;
+import SudokuCreator.gui.graphics.*;
+import SudokuCreator.gui.board_view.*;
 import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.explanation.*;
 import SudokuCreator.sudoku_solver.strategies.*;
