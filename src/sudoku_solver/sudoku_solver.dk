@@ -7,6 +7,7 @@ import strategies.locked_candidates.*;
 import strategies.subsets.*;
 import strategies.fish.*;
 import strategies.xy_wing.*;
+import strategies.phistomefel.*;
 
 # Easiest first; difficulties roughly follow Sudoku Explainer's ratings.
 fun all_strategies() -> List[Strategy] = {
@@ -26,6 +27,7 @@ fun all_strategies() -> List[Strategy] = {
 	s.push(Strategy("Naked Quad", 5.0, NakedSubset[4].find));
 	s.push(Strategy("Jellyfish", 5.2, Fish[4].find));
 	s.push(Strategy("Hidden Quad", 5.4, HiddenSubset[4].find));
+	s.push(Strategy("Phistomefel Ring", 6.0, find_phistomefel));  # not rated by Sudoku Explainer
 	return s;
 }
 

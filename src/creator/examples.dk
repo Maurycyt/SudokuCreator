@@ -6,7 +6,6 @@ class ExampleBoard { name: str; board: str; max_difficulty: f64; }
 
 fun example_boards() -> List[ExampleBoard] = {
 	var examples: List[ExampleBoard];
-	examples.push(ExampleBoard("Full House", ".23456789456.89123789123.562.45678915678.12348912345.734.67891267891.34591234567.", 1.0));
 	examples.push(ExampleBoard("Hidden Single", "68.2..4.7...8.73.9..5.....2....34.8..4...9.2..1.68.5...3.4..7.596.7.....2.7......", 1.2));
 	examples.push(ExampleBoard("Naked Single", "6.7.3.1...8.6.....1....836.21....47..4.12.6.5..65...3.8...7.952..........3...97..", 2.3));
 	examples.push(ExampleBoard("Pointing", "1...93..4..7......4.......2..8..247....7.....3.5.6.9.....1...63.....61...3.28....", 2.6));
@@ -15,5 +14,6 @@ fun example_boards() -> List[ExampleBoard] = {
 	examples.push(ExampleBoard("Naked and Hidden Triple", "4...2.......5...3.5....78.....28..5..9.....7163..7...4...65........3.5.......1.9.", 4.0));
 	examples.push(ExampleBoard("Naked Pair, XY-Wing, Naked Quad", "3.75.........3.4.1....2.6........96.4.82.6........1....3...8..26......7.9.5......", 5.0));
 	examples.push(ExampleBoard("Jellyfish", "..1...5788..5.1..34..7...9...6.8..542..4.....7.53...8.....2.83139.1...27....7.9.5", 5.2));
+	examples.push(ExampleBoard("Phistomefel Ring", "2.7.4.35.51......4.6......7...7.9..6..5.81.4...1..4......5.24.342..6.7......73.2.", 6.0));
 	return examples;
 }

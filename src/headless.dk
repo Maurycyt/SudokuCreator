@@ -12,6 +12,8 @@ import SudokuCreator.sudoku_solver.difficulty.*;
 # Diagnostics without a window, selected by the SUDOKU_HEADLESS environment variable:
 #   SUDOKU_HEADLESS=<81-character board>  prints how the strategies solve the board
 #                                         (format: see PartialSudoku.parse);
+#   SUDOKU_HEADLESS=batch                 reads boards from stdin, one per line, and prints
+#                                         "solved|stuck <hardest difficulty> <board>" for each;
 #   SUDOKU_HEADLESS=<anything else>       runs the self-tests; exit code 1 on failure.
 
 extern("C") {
@@ -35,7 +37,24 @@ fun run_headless(arg: ref String) -> i64 = {
 		explain(arg.asSlice());
 		return 0;
 	}
+	if (arg == "batch".toString()) {
+		batch();
+		return 0;
+	}
 	return if self_test() then 0i64 else 1i64;
+}
+
+# Stops at the first line that is not a board, e.g. the end of input.
+fun batch() = {
+	var line = builtin_input_string();
+	while (line.length() == 81) {
+		var creator: Creator;
+		creator.load(line.asSlice());
+		let r = &creator.result;
+		let status = if r.stuck then "stuck" else "solved";
+		print(f"{status} {hardest_strategy(r)} {line}\n");
+		line = builtin_input_string();
+	}
 }
 
 fun explain(board: str) = {

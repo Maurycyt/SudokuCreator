@@ -1,0 +1,233 @@
+import core.containers.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+
+# Phistomefel's ring: the 16 cells around the centre box (the "ring") always hold the same digits
+# as the 16 cells of the four 2x2 corners, each the same number of times. Both the corner boxes,
+# and rows 3 and 7 with columns 3 and 7, hold every digit four times; taking away what the two
+# groups share leaves exactly the corners and the ring.
+#
+# So for each digit d, the number n of d's is the same in both areas. Bounding n from below (by
+# units whose d is forced into an area) and from above (by how many d's an area can still fit),
+# a candidate is eliminated if no arrangement of d in its area that includes it respects the
+# bounds, and d is placed in a cell if no arrangement without it does.
+
+fun make_corners() -> CellCoord[16] = {
+	var cells: CellCoord[16];
+	var i = 0;
+	for (row in [0i64, 1i64, 7i64, 8i64]) {
+		for (col in [0i64, 1i64, 7i64, 8i64]) {
+			cells[i] = CellCoord(row, col);
+			i += 1;
+		}
+	}
+	return cells;
+}
+
+# The 5x5 square around the centre, without the centre box.
+fun make_ring() -> CellCoord[16] = {
+	var cells: CellCoord[16];
+	var i = 0;
+	var row: i64 = 2;
+	while (row <= 6) {
+		var col: i64 = 2;
+		while (col <= 6) {
+			if (not (3 <= row <= 5 and 3 <= col <= 5)) {
+				cells[i] = CellCoord(row, col);
+				i += 1;
+			}
+			col += 1;
+		}
+		row += 1;
+	}
+	return cells;
+}
+
+let CORNERS = make_corners();
+let RING = make_ring();
+
+fun contains(area: CellCoord[16], c: CellCoord) -> bool = {
+	for (p in area) { if (p == c) { return true; } }
+	return false;
+}
+
+fun max(a: i64, b: i64) -> i64 = if a > b then a else b;
+fun min(a: i64, b: i64) -> i64 = if a < b then a else b;
+
+# Whether the unit's d is bound to lie in the area: it is placed there, or all its candidates are.
+fun forced_into(s: ref SolverState, unit: ref Unit, area: CellCoord[16], d: i64) -> bool = {
+	var any = false;
+	for (c in unit.cells) {
+		if (s.value(c) == d) { return contains(area, c); }
+		if (s.has(c, d)) {
+			if (not contains(area, c)) { return false; }
+			any = true;
+		}
+	}
+	return any;
+}
+
+# How many d's the area must contain. Units of one kind are disjoint, so each unit whose d is
+# forced into the area adds a distinct one.
+fun lower_bound(s: ref SolverState, area: CellCoord[16], d: i64) -> i64 = {
+	var best: i64 = 0;
+	for (first in [0i64, 9i64, 18i64]) {  # rows, columns, boxes
+		var n: i64 = 0;
+		var u = first;
+		while (u < first + 9) {
+			if (forced_into(s, &UNITS[u], area, d)) { n += 1; }
+			u += 1;
+		}
+		best = max(best, n);
+	}
+	return best;
+}
+
+# Where digit d is or could be in an area, and how many d's the area holds judging by itself.
+class Spots {
+	placed: List[CellCoord];
+	open: List[CellCoord];   # empty cells with candidate d
+	conflicts: List[i64];    # bit j of conflicts[i]: open[i] and open[j] see each other
+	low: i64;
+	high: i64;
+
+	global fun of(s: ref SolverState, area: CellCoord[16], d: i64) -> Spots = {
+		var spots: Spots;
+		for (c in area) {
+			if (s.value(c) == d) { spots.placed.push(c); }
+			else if (s.has(c, d)) { spots.open.push(c); }
+		}
+		var i = 0;
+		while (i < spots.open.length()) {
+			var mask: i64 = 0;
+			var j = 0;
+			while (j < spots.open.length()) {
+				if (spots.open.at(i).sees(spots.open.at(j))) { mask |= 1i64 << j; }
+				j += 1;
+			}
+			spots.conflicts.push(mask);
+			i += 1;
+		}
+		spots.low = lower_bound(s, area, d);
+		spots.high = spots.most(0, 0);
+		return spots;
+	}
+
+	# The most d's the area can hold, using every open cell in `include` and none in `exclude`.
+	fun most(include: i64, exclude: i64) -> i64 = placed.length() + most_from(0, 0, include, exclude);
+
+	fun most_from(i: i64, chosen: i64, include: i64, exclude: i64) -> i64 = {
+		if (i == open.length()) { return bit_count(chosen); }
+		let bit = 1i64 << i;
+		var best: i64 = -1;
+		if ((exclude & bit) == 0 and (conflicts.at(i) & chosen) == 0) {
+			best = most_from(i + 1, chosen | bit, include, exclude);
+		}
+		if ((include & bit) == 0) { best = max(best, most_from(i + 1, chosen, include, exclude)); }
+		return best;
+	}
+
+	# Collects the open cells that must hold d, and those that cannot, if the area holds between
+	# `at_least` and `at_most` d's. Deductions that the area's own bounds already give are left
+	# out, as they do not need the ring. Returns whether it found any.
+	fun deduce(at_least: i64, at_most: i64, placements: ref List[CellCoord], eliminations: ref List[CellCoord]) -> bool = {
+		var found = false;
+		var i = 0;
+		while (i < open.length()) {
+			let bit = 1i64 << i;
+			let most_with = most(bit, 0);
+			let most_without = most(0, bit);
+			let excluded = placed.length() + 1 > at_most or most_with < at_least;
+			if (excluded and most_with >= low) {
+				eliminations.push(open.at(i));
+				found = true;
+			} else if (not excluded and most_without < at_least and most_without >= low) {
+				placements.push(open.at(i));
+				found = true;
+			}
+			i += 1;
+		}
+		return found;
+	}
+
+	fun mark(sb: ref StepsBuilder, d: i64) = {
+		var i = 0;
+		while (i < placed.length()) {
+			sb.cell(placed.at(i), Role.Excluder);
+			i += 1;
+		}
+		i = 0;
+		while (i < open.length()) {
+			sb.cand(open.at(i), d, Role.Pattern);
+			i += 1;
+		}
+	}
+}
+
+fun find_phistomefel(s: ref SolverState) -> List[Step] = {
+	var steps: List[Step];
+	var sb = StepsBuilder(&steps);
+	for (d in DIGITS) {
+		var corners = Spots.of(s, CORNERS, d);
+		var ring = Spots.of(s, RING, d);
+		let low = max(corners.low, ring.low);
+		let high = min(corners.high, ring.high);
+		if (low > high) { continue; }  # a contradiction, reported elsewhere
+
+		var placements: List[CellCoord];
+		var eliminations: List[CellCoord];
+		let in_corners = corners.deduce(low, high, &placements, &eliminations);
+		let in_ring = ring.deduce(low, high, &placements, &eliminations);
+		if (not in_corners and not in_ring) { continue; }
+
+		sb.step("Phistomefel's ring: the 16 cells around the centre box (yellow) always hold the same digits as the 16 corner cells (blue), each the same number of times.".toString());
+		for (c in RING) { sb.cell(c, Role.Unit); }
+		for (c in CORNERS) { sb.cell(c, Role.Excluded); }
+
+		# Each bound is credited to the area it comes from; on a tie, to the area across from the
+		# deductions, which is where the information has to come from.
+		let credit_ring = in_corners and not in_ring;
+		let high_in_ring = ring.high < corners.high or (ring.high == corners.high and credit_ring);
+		let low_in_ring = ring.low > corners.low or (ring.low == corners.low and credit_ring);
+		let high_area = if high_in_ring then "ring" else "corners";
+		let other_area = if high_in_ring then "corners" else "ring";
+		let low_area = if low_in_ring then "ring" else "corners";
+		if (high == 0) {
+			sb.step_keep(f"Digit {d} cannot go anywhere in the {high_area}, so it cannot be in the {other_area} either.");
+		} else if (low == 0) {
+			sb.step_keep(f"Digit {d} appears equally often in both areas, and at most {high} times, because the {high_area} cannot fit more.");
+		} else {
+			sb.step_keep(f"Digit {d} appears equally often in both areas: at least {low} times, because the {low_area} must contain it that often, and at most {high} times, because the {high_area} cannot fit more.");
+		}
+		corners.mark(&sb, d);
+		ring.mark(&sb, d);
+
+		var names: List[String];
+		var i = 0;
+		while (i < placements.length()) {
+			names.push(placements.at(i).name());
+			i += 1;
+		}
+		if (placements.length() == 0) {
+			sb.step_keep(f"So {d} can be eliminated from the crossed-out cells.");
+		} else if (eliminations.length() == 0) {
+			sb.step_keep(f"So {d} must go in {join_names(&names)}.");
+		} else {
+			sb.step_keep(f"So {d} must go in {join_names(&names)}, and can be eliminated from the crossed-out cells.");
+		}
+		i = 0;
+		while (i < placements.length()) {
+			sb.place(placements.at(i), d);
+			i += 1;
+		}
+		i = 0;
+		while (i < eliminations.length()) {
+			sb.eliminate(eliminations.at(i), d);
+			i += 1;
+		}
+		return steps;
+	}
+	return steps;
+}
