@@ -1,51 +1,54 @@
+import core.containers.*;
 import src.partial_sudoku.PartialSudoku;
 import src.sudoku_solver.units.*;
 
-# Plansza solvera: cyfry + kandydaci (DESIGN.md, rozdz. 4).
+# The solver's board: digits + candidates (see DESIGN.md, chapter 4).
 class SolverState {
 	class Cell {
-		value: i64;          # 0 = puste
-		given: bool;         # cyfra z zadania (rysowana innym kolorem)
-		candidates: u8[9];   # candidates[d - 1] == 1 -> cyfra d jeszcze możliwa
+		value: i64;          # 0 = empty
+		given: bool;         # a digit from the puzzle (drawn in a different color)
+		candidates: u8[9];   # candidates[d - 1] == 1 -> digit d is still possible
 	}
 
 	board: Cell[9][9];
 
-	fun cell(c: i64) -> ref Cell = &board[row_of(c)][col_of(c)];
-	fun value(c: i64) -> i64 = cell(c).value;
-	fun has(c: i64, d: i64) -> bool = cell(c).candidates[d - 1] != 0u8;
+	fun cell(c: CellCoord) -> ref Cell = &board[c.row][c.col];
+	fun value(c: CellCoord) -> i64 = cell(c).value;
+	fun has(c: CellCoord, d: i64) -> bool = cell(c).candidates[d - 1] != 0u8;
 
-	fun count(c: i64) -> i64 = {
+	fun count(c: CellCoord) -> i64 = {
 		var n = 0;
 		var d = 1;
 		while (d <= 9) { if (has(c, d)) { n += 1; } d += 1; }
 		return n;
 	}
 
-	fun first_candidate(c: i64) -> i64 = {
+	fun first_candidate(c: CellCoord) -> i64 = {
 		var d = 1;
 		while (d <= 9 and not has(c, d)) { d += 1; }
 		return d;
 	}
 
-	fun eliminate(c: i64, d: i64) = { cell(c).candidates[d - 1] = 0u8; }
+	fun eliminate(c: CellCoord, d: i64) = { cell(c).candidates[d - 1] = 0u8; }
 
-	# Wpisuje d w c i skreśla d u sąsiadów (to człowiek robi "w głowie", nie osobny krok).
-	fun place(c: i64, d: i64) = {
+	# Places d in c and crosses out d from its peers (a human does this "in their head", not as its own step).
+	fun place(c: CellCoord, d: i64) = {
 		cell(c).value = d;
 		var k = 1;
 		while (k <= 9) { eliminate(c, k); k += 1; }
-		var p = 0;
-		while (p < 81) { if (sees(c, p)) { eliminate(p, d); } p += 1; }
+		let cells = all_cells();
+		var i = 0;
+		while (i < cells.length()) { let p = cells.at(i); if (sees(c, p)) { eliminate(p, d); } i += 1; }
 	}
 
 	fun solved() -> bool = {
-		var c = 0;
-		while (c < 81) { if (value(c) == 0) { return false; } c += 1; }
+		let cells = all_cells();
+		var i = 0;
+		while (i < cells.length()) { if (value(cells.at(i)) == 0) { return false; } i += 1; }
 		return true;
 	}
 
-	# Czy cyfra d jest już wpisana w jednostce u.
+	# Whether digit d is already placed in unit u.
 	fun unit_has(u: i64, d: i64) -> bool = {
 		var k = 0;
 		while (k < 9) { if (value(unit_cell(u, k)) == d) { return true; } k += 1; }
@@ -54,17 +57,20 @@ class SolverState {
 
 	global fun create(partial: PartialSudoku) -> SolverState = {
 		var s: SolverState;
-		var c = 0;
-		while (c < 81) {
+		let cells = all_cells();
+		var i = 0;
+		while (i < cells.length()) {
+			let c = cells.at(i);
 			var d = 1;
 			while (d <= 9) { s.cell(c).candidates[d - 1] = 1u8; d += 1; }
-			c += 1;
+			i += 1;
 		}
-		c = 0;
-		while (c < 81) {
-			let v = partial.board[row_of(c)][col_of(c)].value;
+		i = 0;
+		while (i < cells.length()) {
+			let c = cells.at(i);
+			let v = partial.board[c.row][c.col].value;
 			if (v != 0) { s.place(c, v); s.cell(c).given = true; }
-			c += 1;
+			i += 1;
 		}
 		return s;
 	}

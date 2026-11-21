@@ -1,22 +1,23 @@
 import core.containers.*;
+import src.sudoku_solver.units.*;
 import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.explanation.*;
 
-# Format strategii (DESIGN.md, rozdz. 6).
-# Strategia nie zmienia stanu: find(stan) zwraca listę kroków do pokazania (pusta = nic nie znalazła).
-# Jeden krok = jedno wciśnięcie strzałki w prawo: co pokolorować + podpis na dole.
-# Efekty ruchu (wpisania/skreślenia) solver bierze z OSTATNIEGO kroku listy.
+# Strategy format (see DESIGN.md, chapter 6).
+# A strategy does not change the state: find(state) returns a list of steps to show (empty = found nothing).
+# One step = one press of the right arrow: what to color + a caption at the bottom.
+# The solver takes a move's effects (placements/eliminations) from the LAST step in the list.
 
-class CandRef { cell: i64; digit: i64; }
+class CandRef { cell: CellCoord; digit: i64; }
 
 class Step {
-	strategy: String;             # nazwa strategii (ustawia solver)
-	text: String;                 # podpis pod planszą
-	units: List[UnitMark];        # co pokolorować
+	strategy: String;             # strategy name (set by the solver)
+	text: String;                 # caption below the board
+	units: List[UnitMark];        # what to color
 	cells: List[CellMark];
 	cands: List[CandMark];
-	placements: List[CandRef];    # wpisania (tylko single)
-	eliminations: List[CandRef];  # skreślenia
+	placements: List[CandRef];    # placements (singles only)
+	eliminations: List[CandRef];  # eliminations
 }
 
 class Strategy {
@@ -25,7 +26,7 @@ class Strategy {
 	find: funptr(ref SolverState) -> List[Step];
 }
 
-# Buduje listę kroków: sb.step("..."); sb.unit(u, Role.Unit); sb.place(c, d); ...
+# Builds a list of steps: sb.step("..."); sb.unit(u, Role.Unit); sb.place(c, d); ...
 class StepsBuilder {
 	steps: List[Step];
 
@@ -36,16 +37,16 @@ class StepsBuilder {
 		s.text = move text;
 		steps.push(move s);
 	}
-	# Nowy krok zaczynający od kopii poprzedniego (kolorowania i efekty zostają).
+	# A new step that starts as a copy of the previous one (colors and effects carry over).
 	fun step_keep(text: String) = {
 		var s = copy cur();
 		s.text = move text;
 		steps.push(move s);
 	}
 	fun unit(u: i64, role: i64) = { cur().units.push(UnitMark(u, role)); }
-	fun cell(c: i64, role: i64) = { cur().cells.push(CellMark(c, role)); }
-	fun cand(c: i64, d: i64, role: i64) = { cur().cands.push(CandMark(c, d, role)); }
-	# Efekty: zapisuje ruch i od razu oznacza go do narysowania.
-	fun place(c: i64, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
-	fun eliminate(c: i64, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }
+	fun cell(c: CellCoord, role: i64) = { cur().cells.push(CellMark(c, role)); }
+	fun cand(c: CellCoord, d: i64, role: i64) = { cur().cands.push(CandMark(c, d, role)); }
+	# Effects: records the move and immediately marks it to be drawn.
+	fun place(c: CellCoord, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
+	fun eliminate(c: CellCoord, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }
 }

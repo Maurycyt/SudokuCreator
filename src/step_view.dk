@@ -8,43 +8,44 @@ import src.sudoku_solver.explanation.*;
 import src.sudoku_solver.strategies.*;
 import src.sudoku_solver.SolveResult;
 
-# Podgląd kroku solvera (DESIGN.md, rozdz. 13): rysuje stan PRZED ruchem + kolorowanie i podpis kroku.
-# Jedyne miejsce, które zamienia role na kolory. Strategie nie wiedzą nic o SDL.
+# Solver step viewer (see DESIGN.md, chapter 13): draws the state BEFORE the move, plus the
+# coloring and caption for that step.
+# The only place that turns roles into colors. Strategies know nothing about SDL.
 
 fun set_role_color(renderer: cptr SDL_Renderer, role: i64) = {
-	if (role == Role.Unit) { set_color(renderer, 255u8, 244u8, 200u8); }        # jasnożółty
-	if (role == Role.Excluded) { set_color(renderer, 215u8, 230u8, 255u8); }    # jasnoniebieski
-	if (role == Role.Excluder) { set_color(renderer, 125u8, 170u8, 250u8); }    # mocny niebieski
-	if (role == Role.Pattern) { set_color(renderer, 140u8, 220u8, 140u8); }     # zielony
-	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # pomarańczowy
-	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # czerwony
-	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # jasnozielony
+	if (role == Role.Unit) { set_color(renderer, 255u8, 244u8, 200u8); }        # light yellow
+	if (role == Role.Excluded) { set_color(renderer, 215u8, 230u8, 255u8); }    # light blue
+	if (role == Role.Excluder) { set_color(renderer, 125u8, 170u8, 250u8); }    # strong blue
+	if (role == Role.Pattern) { set_color(renderer, 140u8, 220u8, 140u8); }     # green
+	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # orange
+	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # red
+	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # light green
 }
 
-fun cell_x(c: i64) -> i32 = ORIGIN + (col_of(c) as i32) * CELL;
-fun cell_y(c: i64) -> i32 = ORIGIN + (row_of(c) as i32) * CELL;
-# Środek małej cyfry kandydata d (mini-siatka 3x3: 1 lewy górny, 9 prawy dolny).
-fun cand_x(c: i64, d: i64) -> i32 = cell_x(c) + (((d - 1) % 3) as i32) * (CELL / 3) + CELL / 6;
-fun cand_y(c: i64, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL / 3) + CELL / 6;
+fun cell_x(c: CellCoord) -> i32 = ORIGIN + c.col * CELL;
+fun cell_y(c: CellCoord) -> i32 = ORIGIN + c.row * CELL;
+# Center of the small candidate digit d (3x3 mini-grid: 1 top-left, 9 bottom-right).
+fun cand_x(c: CellCoord, d: i64) -> i32 = cell_x(c) + (((d - 1) % 3) as i32) * (CELL / 3) + CELL / 6;
+fun cand_y(c: CellCoord, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL / 3) + CELL / 6;
 
-# Czy krok wpisuje cyfrę w komórkę c (wtedy nie rysujemy tam kandydatów).
-fun is_placed(f: ref Step, c: i64) -> bool = {
+# Whether the step places a digit in cell c (if so, candidates are not drawn there).
+fun is_placed(f: ref Step, c: CellCoord) -> bool = {
 	var i = 0;
 	while (i < f.cells.length()) {
-		if (f.cells.at(i).cell == c and f.cells.at(i).role == Role.Placed) { return true; }
+		if (same_cell(f.cells.at(i).cell, c) and f.cells.at(i).role == Role.Placed) { return true; }
 		i += 1;
 	}
 	return false;
 }
 
-# Numer ruchu, do którego należy krok step_idx.
+# The move that step step_idx belongs to.
 fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
 	var m: i64 = 0;
 	while (m + 1 < result.move_start.length() and result.move_start.at(m + 1) <= step_idx) { m += 1; }
 	return m;
 }
 
-# Gruba linia = trzy równoległe cienkie.
+# A thick line = three parallel thin ones.
 fun thick_line(renderer: cptr SDL_Renderer, x1: i32, y1: i32, x2: i32, y2: i32) = {
 	var o = 0 - 1;
 	while (o <= 1) {
@@ -54,7 +55,7 @@ fun thick_line(renderer: cptr SDL_Renderer, x1: i32, y1: i32, x2: i32, y2: i32) 
 	}
 }
 
-# Jak make_text, ale ze String i zawijaniem do `wrap` pikseli.
+# Like make_text, but with a String and wrapping at `wrap` pixels.
 fun make_wrapped_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, s: ref String, wrap: u32) -> Text = {
 	var z = copy s;
 	z.append('\0');
@@ -73,17 +74,17 @@ fun make_wrapped_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, s: ref S
 }
 
 class StepView {
-	given: Text[10];    # cyfry z zadania
-	solved: Text[10];   # wpisane przez solver we wcześniejszych krokach
-	placed: Text[10];   # wpisywana w bieżącym kroku
-	small: Text[10];    # kandydaci
+	given: Text[10];    # digits from the puzzle
+	solved: Text[10];   # entered by the solver in earlier steps
+	placed: Text[10];   # entered in the current step
+	small: Text[10];    # candidates
 	header: Text;
 	body: Text;
-	shown: i64 = 0 - 1; # dla którego kroku są aktualne header/body
+	shown: i64 = 0 - 1; # which step the header/body are currently built for
 	panel_font: cptr TTF_Font;
-	move_lines: List[Text];  # "12. Hidden Single" dla każdego ruchu, budowane przy pierwszym draw
+	move_lines: List[Text];  # "12. Hidden Single" for each move, built on first draw
 	title: Text;
-	legend: Text[7];         # opisy kolorów ról
+	legend: Text[7];         # descriptions of the role colors
 	keys_help: Text;
 
 	global fun create(renderer: cptr SDL_Renderer, big: cptr TTF_Font, small_font: cptr TTF_Font) -> StepView = {
@@ -97,19 +98,19 @@ class StepView {
 			d += 1;
 		}
 		v.panel_font = small_font;
-		v.title = make_text(renderer, small_font, cstr("Ruchy solvera\0"), 30u8, 30u8, 30u8);
-		v.legend[Role.Unit] = make_text(renderer, small_font, cstr("jednostka, w której szukamy\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Excluded] = make_text(renderer, small_font, cstr("obszar wykluczony przez cyfrę\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Excluder] = make_text(renderer, small_font, cstr("cyfra, która wyklucza\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Pattern] = make_text(renderer, small_font, cstr("kandydat tworzący wzór\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Target] = make_text(renderer, small_font, cstr("pole docelowe\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Eliminated] = make_text(renderer, small_font, cstr("skreślany kandydat\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Placed] = make_text(renderer, small_font, cstr("wpisywana cyfra\0"), 60u8, 60u8, 60u8);
-		v.keys_help = make_text(renderer, small_font, cstr("←/→ krok   Esc edytor\0"), 90u8, 90u8, 90u8);
+		v.title = make_text(renderer, small_font, cstr("Solver moves\0"), 30u8, 30u8, 30u8);
+		v.legend[Role.Unit] = make_text(renderer, small_font, cstr("the unit being searched\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Excluded] = make_text(renderer, small_font, cstr("area excluded by a digit\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Excluder] = make_text(renderer, small_font, cstr("the digit that excludes\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Pattern] = make_text(renderer, small_font, cstr("candidate forming the pattern\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Target] = make_text(renderer, small_font, cstr("target cell\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Eliminated] = make_text(renderer, small_font, cstr("candidate being crossed out\0"), 60u8, 60u8, 60u8);
+		v.legend[Role.Placed] = make_text(renderer, small_font, cstr("digit being entered\0"), 60u8, 60u8, 60u8);
+		v.keys_help = make_text(renderer, small_font, cstr("←/→ step   Esc editor\0"), 90u8, 90u8, 90u8);
 		return v;
 	}
 
-	# Wołać po każdym nowym rozwiązaniu: unieważnia teksty zbudowane dla poprzedniego.
+	# Call after every new solve: invalidates textures built for the previous one.
 	fun reset() = {
 		var i = 0;
 		while (i < move_lines.length()) { SDL_DestroyTexture(move_lines.at(i).tex); i += 1; }
@@ -118,7 +119,8 @@ class StepView {
 		shown = 0 - 1;
 	}
 
-	# Panel po prawej (DESIGN 13.1): lista ruchów z bieżącym podświetlonym, legenda, klawisze.
+	# Right-hand panel (see DESIGN.md, chapter 13.1): move list with the current one highlighted,
+	# legend, key hints.
 	fun draw_panel(renderer: cptr SDL_Renderer, result: ref SolveResult, step_idx: i64) = {
 		let x = ORIGIN + BOARD + 30;
 		let rows: i64 = 22;
@@ -132,7 +134,7 @@ class StepView {
 		}
 		draw_text(renderer, title, x, ORIGIN + 8, false);
 
-		# Okno listy przewija się tak, żeby bieżący ruch był mniej więcej w środku.
+		# The list window scrolls so the current move is roughly centered.
 		let current = move_of(result, step_idx);
 		var first = current - rows / 2;
 		if (first > move_lines.length() - rows) { first = move_lines.length() - rows; }
@@ -165,16 +167,16 @@ class StepView {
 		let step = f;
 		let s = result.snapshots.at(step_idx);
 
-		if (shown != step_idx) {   # tekst renderujemy tylko po zmianie
+		if (shown != step_idx) {   # text is only re-rendered when the step changes
 			if (shown >= 0) { SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
 			let m = move_of(result, step_idx);
-			let h = f"Krok {step_idx + 1}/{result.steps.length()} · ruch {m + 1}: {f.strategy}";
+			let h = f"Step {step_idx + 1}/{result.steps.length()} · move {m + 1}: {f.strategy}";
 			header = make_wrapped_text(renderer, font, &h, 540u32);
 			body = make_wrapped_text(renderer, font, &f.text, 540u32);
 			shown = step_idx;
 		}
 
-		# Tło planszy, potem tła jednostek i komórek wg ról.
+		# Board background, then unit and cell backgrounds by role.
 		set_color(renderer, 255u8, 255u8, 255u8);
 		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
 		var i = 0;
@@ -193,7 +195,7 @@ class StepView {
 			i += 1;
 		}
 
-		# Siatka (jak w edytorze).
+		# Grid (same as in the editor).
 		var line = 0;
 		while (line <= 9) {
 			let offset = ORIGIN + line * CELL;
@@ -209,15 +211,17 @@ class StepView {
 			line += 1;
 		}
 
-		# Cyfry: podane / wpisane wcześniej / wpisywane teraz (zielone, z CellMark{Placed}).
-		var c = 0;
-		while (c < 81) {
+		# Digits: given / previously entered / being entered now (green, via CellMark{Placed}).
+		let cells = all_cells();
+		var ci = 0;
+		while (ci < cells.length()) {
+			let c = cells.at(ci);
 			let v = s.value(c);
 			if (v != 0) {
 				let t = if s.cell(c).given then given[v] else solved[v];
 				draw_text(renderer, t, cell_x(c) + CELL / 2, cell_y(c) + CELL / 2, true);
 			}
-			c += 1;
+			ci += 1;
 		}
 		i = 0;
 		while (i < f.cells.length()) {
@@ -225,13 +229,13 @@ class StepView {
 			var k = 0;
 			while (m.role == Role.Placed and k < step.placements.length()) {
 				let p = step.placements.at(k);
-				if (p.cell == m.cell) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
+				if (same_cell(p.cell, m.cell)) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
 				k += 1;
 			}
 			i += 1;
 		}
 
-		# Kandydaci: kolorowe tło znaczników, cyfry, przekreślenia.
+		# Candidates: colored marker backgrounds, digits, strike-throughs.
 		i = 0;
 		while (i < f.cands.length()) {
 			let m = f.cands.at(i);
@@ -239,14 +243,15 @@ class StepView {
 			fill_rect(renderer, cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
 			i += 1;
 		}
-		c = 0;
-		while (c < 81) {
+		ci = 0;
+		while (ci < cells.length()) {
+			let c = cells.at(ci);
 			var d = 1;
 			while (d <= 9) {
 				if (s.has(c, d) and not is_placed(f, c)) { draw_text(renderer, small[d], cand_x(c, d), cand_y(c, d), true); }
 				d += 1;
 			}
-			c += 1;
+			ci += 1;
 		}
 		set_color(renderer, 200u8, 0u8, 0u8);
 		i = 0;
@@ -258,7 +263,7 @@ class StepView {
 			i += 1;
 		}
 
-		# Opis pod planszą (zasłania podpowiedź edytora).
+		# Caption below the board (covers the editor's hint).
 		set_color(renderer, 245u8, 243u8, 236u8);
 		fill_rect(renderer, 0, ORIGIN + BOARD + 3, ORIGIN + BOARD + 10, HEIGHT);
 		draw_text(renderer, header, ORIGIN, ORIGIN + BOARD + 25, false);

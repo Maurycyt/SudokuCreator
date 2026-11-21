@@ -4,24 +4,25 @@ import src.sudoku_solver.solver_state.SolverState;
 import src.sudoku_solver.explanation.*;
 import src.sudoku_solver.strategies.*;
 
-# Najprostsze strategie (DESIGN.md, rozdz. 8, poziom 1). Każda wpisuje jedną cyfrę.
-# Kroki: najpierw wynik (zielona cyfra), potem uzasadnienie.
+# The simplest strategies. Each one places a single digit.
+# Steps: first the result (the digit in green), then the explanation.
 
-# Full House: w jednostce zostało jedno puste pole.
+# Full House: a unit has one empty cell left.
 fun find_full_house(s: ref SolverState) -> List[Step] = {
 	var sb: StepsBuilder;
 	var u = 0;
 	while (u < 27 and sb.steps.length() == 0) {
-		var empty: i64 = 0 - 1;
+		var empty: CellCoord;
 		var count = 0;
 		var k = 0;
 		while (k < 9) {
-			if (s.value(unit_cell(u, k)) == 0) { empty = unit_cell(u, k); count += 1; }
+			let c = unit_cell(u, k);
+			if (s.value(c) == 0) { empty = c; count += 1; }
 			k += 1;
 		}
 		if (count == 1) {
 			let d = s.first_candidate(empty);
-			sb.step(f"W {unit_name(u)} zostało jedno wolne pole, brakuje w nim tylko {d}.");
+			sb.step(f"{unit_name(u)} has one empty cell left, and only {d} is missing from it.");
 			sb.unit(u, Role.Unit);
 			sb.place(empty, d);
 		}
@@ -30,8 +31,8 @@ fun find_full_house(s: ref SolverState) -> List[Step] = {
 	return copy sb.steps;
 }
 
-# Hidden Single: cyfra d ma w jednostce jedno możliwe miejsce.
-# Kolejność jak u człowieka: najpierw kwadraty (18..26), potem wiersze i kolumny.
+# Hidden Single: digit d has one possible place left in a unit.
+# Order like a human would: boxes first (18..26), then rows and columns.
 fun find_hidden_single(s: ref SolverState) -> List[Step] = {
 	var sb: StepsBuilder;
 	var i = 0;
@@ -39,18 +40,19 @@ fun find_hidden_single(s: ref SolverState) -> List[Step] = {
 		let u = (i + 18) % 27;
 		var d = 1;
 		while (d <= 9 and sb.steps.length() == 0) {
-			var target: i64 = 0 - 1;
+			var target: CellCoord;
 			var count = 0;
 			var k = 0;
 			while (k < 9) {
-				if (s.has(unit_cell(u, k), d)) { target = unit_cell(u, k); count += 1; }
+				let c = unit_cell(u, k);
+				if (s.has(c, d)) { target = c; count += 1; }
 				k += 1;
 			}
 			if (count == 1 and not s.unit_has(u, d)) {
-				sb.step(f"W {unit_name(u)} cyfra {d} może stać tylko w {cell_name(target)}.");
+				sb.step(f"In {unit_name(u)}, digit {d} can only go in {cell_name(target)}.");
 				sb.unit(u, Role.Unit);
 				sb.place(target, d);
-				sb.step_keep(f"Dlaczego? Pozostałe pola {unit_name(u)} wykluczają cyfry {d} z tych samych wierszy, kolumn lub kwadratów.");
+				sb.step_keep(f"Why? The other cells of {unit_name(u)} exclude digit {d} through a shared row, column, or box.");
 				explain_excluders(s, u, d, target, &sb);
 			}
 			d += 1;
@@ -60,47 +62,51 @@ fun find_hidden_single(s: ref SolverState) -> List[Step] = {
 	return copy sb.steps;
 }
 
-# Dla każdego pustego pola jednostki u (poza target) szuka wpisanej d, która je wyklucza:
-# jej wiersz/kolumna/kwadrat na jasnoniebiesko, sama cyfra na mocny niebieski.
-fun explain_excluders(s: ref SolverState, u: i64, d: i64, target: i64, sb: ref StepsBuilder) = {
+# For each empty cell of unit u other than target, finds a placed d that excludes it:
+# its row/column/box is highlighted light blue, the digit itself in strong blue.
+fun explain_excluders(s: ref SolverState, u: i64, d: i64, target: CellCoord, sb: ref StepsBuilder) = {
 	var k = 0;
 	while (k < 9) {
 		let c = unit_cell(u, k);
-		if (c != target and s.value(c) == 0) {
-			var p = 0;
+		if (not same_cell(c, target) and s.value(c) == 0) {
+			let cells = all_cells();
+			var i = 0;
 			var found = false;
-			while (p < 81 and not found) {
+			while (i < cells.length() and not found) {
+				let p = cells.at(i);
 				if (s.value(p) == d and sees(c, p)) {
 					found = true;
 					var w = 0;
-					while (w < 3) {   # pierwsza wspólna jednostka p i c, inna niż u
+					while (w < 3) {   # the first unit shared by p and c, other than u
 						if (unit_of(p, w) == unit_of(c, w) and unit_of(p, w) != u) { sb.unit(unit_of(p, w), Role.Excluded); w = 3; }
 						w += 1;
 					}
 					sb.cell(p, Role.Excluder);
 				}
-				p += 1;
+				i += 1;
 			}
 		}
 		k += 1;
 	}
 }
 
-# Naked Single: komórka ma jednego kandydata.
+# Naked Single: a cell has exactly one candidate.
 fun find_naked_single(s: ref SolverState) -> List[Step] = {
 	var sb: StepsBuilder;
-	var c = 0;
-	while (c < 81 and sb.steps.length() == 0) {
+	let cells = all_cells();
+	var i = 0;
+	while (i < cells.length() and sb.steps.length() == 0) {
+		let c = cells.at(i);
 		if (s.value(c) == 0 and s.count(c) == 1) {
 			let d = s.first_candidate(c);
-			sb.step(f"W {cell_name(c)} pasuje tylko {d}.");
+			sb.step(f"Only {d} fits in {cell_name(c)}.");
 			sb.place(c, d);
-			sb.step_keep(f"Dlaczego? Wszystkie inne cyfry są już w wierszu, kolumnie lub kwadracie {cell_name(c)}.");
+			sb.step_keep(f"Why? Every other digit is already in the row, column, or box of {cell_name(c)}.");
 			sb.unit(unit_of(c, 0), Role.Excluded);
 			sb.unit(unit_of(c, 1), Role.Excluded);
 			sb.unit(unit_of(c, 2), Role.Excluded);
 		}
-		c += 1;
+		i += 1;
 	}
 	return copy sb.steps;
 }

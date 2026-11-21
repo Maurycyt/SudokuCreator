@@ -89,15 +89,15 @@ fun main() = {
 		digits[d] = digit_text(renderer, font, d, 40u8, 90u8, 200u8);
 		d = d + 1;
 	}
-	let help = make_text(renderer, small, cstr("Kliknij pole i wpisz 1-9 · S: rozwiąż · L: przykład\0"), 90u8, 90u8, 90u8);
+	let help = make_text(renderer, small, cstr("Click a cell and type 1-9 · S: solve · L: example\0"), 90u8, 90u8, 90u8);
 
 	var selected_row = 4;
 	var selected_col = 4;
 
-	# Podgląd kroków solvera.
+	# Solver step viewer.
 	let cand_font = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 14);
 	var view = StepView.create(renderer, font, cand_font);
-	load_example();                 # po starcie od razu pokazujemy rozwiązany przykład
+	load_example();                 # right after start, show the solved example immediately
 	var viewing = try_solve();
 	var step_idx: i64 = 0;
 

@@ -4,7 +4,7 @@ import solver_state.SolverState;
 import strategies.*;
 import singles.*;
 
-# Rejestr: od najłatwiejszej. Nowa strategia = jedna linia tutaj.
+# Registry, easiest first. A new strategy = one line here.
 fun all_strategies() -> List[Strategy] = {
 	var s: List[Strategy];
 	s.push(Strategy("Full House", 1.0, find_full_house));
@@ -13,12 +13,12 @@ fun all_strategies() -> List[Strategy] = {
 	return s;
 }
 
-# Wszystkie kroki do pokazania, po kolei. Ruch = jedno użycie strategii = kilka kroków.
+# All steps to show, in order. A move = one strategy application = several steps.
 class SolveResult {
 	steps: List[Step];
-	snapshots: List[SolverState];  # snapshots[i] = stan, na którym rysujemy steps[i] (przed ruchem)
-	move_start: List[i64];         # indeks pierwszego kroku każdego ruchu
-	stuck: bool;                   # żadna strategia nic nie znalazła
+	snapshots: List[SolverState];  # snapshots[i] = the state we draw steps[i] on (before the move)
+	move_start: List[i64];         # index of the first step of each move
+	stuck: bool;                   # no strategy found anything
 }
 
 class SudokuSolver {
@@ -34,7 +34,7 @@ class SudokuSolver {
 		while (k < step.eliminations.length()) { let e = step.eliminations.at(k); state.eliminate(e.cell, e.digit); k += 1; }
 	}
 
-	# Po każdym ruchu wraca do najłatwiejszej strategii (DESIGN.md, rozdz. 7).
+	# After every move, go back to the easiest strategy (see DESIGN.md, chapter 7).
 	fun solve() -> SolveResult = {
 		let strategies = all_strategies();
 		var r: SolveResult;
@@ -54,7 +54,7 @@ class SudokuSolver {
 						r.steps.push(move st);
 						k += 1;
 					}
-					apply(steps.at(steps.length() - 1));   # efekty z ostatniego kroku
+					apply(steps.at(steps.length() - 1));   # effects come from the last step
 				}
 				i += 1;
 			}

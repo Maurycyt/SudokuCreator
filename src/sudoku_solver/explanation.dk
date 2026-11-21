@@ -1,16 +1,18 @@
-# Co kolorować na planszy (DESIGN.md, rozdz. 5): strategia nie rysuje, tylko OPISUJE.
-# Role to semantyka; kolory dobiera GUI (src/step_view.dk).
+import src.sudoku_solver.units.CellCoord;
+
+# What to color on the board (see DESIGN.md, chapter 5): a strategy does not draw, it DESCRIBES.
+# A role is semantics; the GUI (src/step_view.dk) picks the colors.
 
 namespace Role {
-	const Unit = 0;       # jednostka, w której szukamy (żółta)
-	const Excluded = 1;   # wiersz/kolumna/kwadrat wykluczony przez cyfrę (jasnoniebieski)
-	const Excluder = 2;   # cyfra, która wyklucza (mocny niebieski)
-	const Pattern = 3;    # kandydat tworzący wzór
-	const Target = 4;     # pole, w którym nastąpi efekt
-	const Eliminated = 5; # skreślany kandydat
-	const Placed = 6;     # wpisywana cyfra (zielona)
+	const Unit = 0;       # the unit being searched (light yellow)
+	const Excluded = 1;   # a row/column/box excluded by a digit (light blue)
+	const Excluder = 2;   # the digit that excludes (strong blue)
+	const Pattern = 3;    # a candidate forming the pattern
+	const Target = 4;     # the cell where the effect happens
+	const Eliminated = 5; # a candidate being crossed out
+	const Placed = 6;     # a digit being entered (green)
 }
 
 class UnitMark { unit: i64; role: i64; }
-class CellMark { cell: i64; role: i64; }
-class CandMark { cell: i64; digit: i64; role: i64; }
+class CellMark { cell: CellCoord; role: i64; }
+class CandMark { cell: CellCoord; digit: i64; role: i64; }

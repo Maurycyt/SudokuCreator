@@ -1,33 +1,54 @@
 import core.containers.*;
 
-# Jednostki i notacja (DESIGN.md, rozdz. 3).
-# Komórka 0..80 (row*9 + col), jednostka 0..26 (0-8 wiersze, 9-17 kolumny, 18-26 kwadraty), cyfra 1..9.
+# Units and notation (see DESIGN.md, chapter 3).
+# A cell is identified by its row and column (CellCoord); a unit is 0..26 (0-8 rows, 9-17 columns,
+# 18-26 boxes); a digit is 1..9.
 
-fun row_of(c: i64) -> i64 = c / 9;
-fun col_of(c: i64) -> i64 = c % 9;
-fun box_of(c: i64) -> i64 = (c / 27) * 3 + (c % 9) / 3;
-
-# k-ta komórka (0..8) jednostki u.
-fun unit_cell(u: i64, k: i64) -> i64 = {
-	if (u < 9) { return u * 9 + k; }
-	if (u < 18) { return k * 9 + (u - 9); }
-	let b = u - 18;
-	return ((b / 3) * 3 + k / 3) * 9 + (b % 3) * 3 + k % 3;
+class CellCoord {
+	row: i32;
+	col: i32;
 }
 
-# Jednostki komórki: which = 0 wiersz, 1 kolumna, 2 kwadrat.
-fun unit_of(c: i64, which: i64) -> i64 = {
-	if (which == 0) { return row_of(c); }
-	if (which == 1) { return 9 + col_of(c); }
+fun same_cell(a: CellCoord, b: CellCoord) -> bool = a.row == b.row and a.col == b.col;
+
+fun box_of(c: CellCoord) -> i64 = ((c.row / 3) * 3 + c.col / 3) as i64;
+
+# Every cell on the board, row by row.
+fun all_cells() -> List[CellCoord] = {
+	var cells: List[CellCoord];
+	var row = 0;
+	while (row < 9) {
+		var col = 0;
+		while (col < 9) {
+			cells.push(CellCoord(row as i32, col as i32));
+			col += 1;
+		}
+		row += 1;
+	}
+	return cells;
+}
+
+# The k-th cell (0..8) of unit u.
+fun unit_cell(u: i64, k: i64) -> CellCoord = {
+	if (u < 9) { return CellCoord(u as i32, k as i32); }
+	if (u < 18) { return CellCoord(k as i32, (u - 9) as i32); }
+	let b = u - 18;
+	return CellCoord(((b / 3) * 3 + k / 3) as i32, ((b % 3) * 3 + k % 3) as i32);
+}
+
+# Units of a cell: which = 0 row, 1 column, 2 box.
+fun unit_of(c: CellCoord, which: i64) -> i64 = {
+	if (which == 0) { return c.row as i64; }
+	if (which == 1) { return 9 + c.col as i64; }
 	return 18 + box_of(c);
 }
 
-# Dwie różne komórki we wspólnej jednostce.
-fun sees(a: i64, b: i64) -> bool =
-	a != b and (row_of(a) == row_of(b) or col_of(a) == col_of(b) or box_of(a) == box_of(b));
+# Two distinct cells that share a unit.
+fun sees(a: CellCoord, b: CellCoord) -> bool =
+	not same_cell(a, b) and (a.row == b.row or a.col == b.col or box_of(a) == box_of(b));
 
-# r3c5 / r3, c5, b2 (numeracja od 1).
-fun cell_name(c: i64) -> String = f"r{row_of(c) + 1}c{col_of(c) + 1}";
+# r3c5 / r3, c5, b2 (1-based).
+fun cell_name(c: CellCoord) -> String = f"r{c.row + 1}c{c.col + 1}";
 fun unit_name(u: i64) -> String = {
 	if (u < 9) { return f"r{u + 1}"; }
 	if (u < 18) { return f"c{u - 8}"; }
