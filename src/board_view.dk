@@ -1,0 +1,50 @@
+import core.optional.*;
+import SudokuCreator.graphics.*;
+import SudokuCreator.sudoku_solver.units.*;
+
+# Window layout and the board drawing shared by all views.
+
+const WIDTH = 900;
+const HEIGHT = 720;
+const CELL = 60;
+const ORIGIN = 20;                      # top-left corner of the board
+const BOARD = 9 * CELL;
+const PANEL_X = ORIGIN + BOARD + 30;    # the panel right of the board
+const CAPTION_Y = ORIGIN + BOARD + 20;  # the text below the board
+
+fun cell_x(c: CellCoord) -> i32 = ORIGIN + (c.col as i32) * CELL;
+fun cell_y(c: CellCoord) -> i32 = ORIGIN + (c.row as i32) * CELL;
+
+# The cell at pixel (x, y), if any.
+fun cell_at(x: i32, y: i32) -> ?CellCoord = {
+	if (ORIGIN <= x < ORIGIN + BOARD and ORIGIN <= y < ORIGIN + BOARD) {
+		return CellCoord(((y - ORIGIN) / CELL) as i64, ((x - ORIGIN) / CELL) as i64);
+	}
+	return none;
+}
+
+# Center of candidate d's slot, in a 3x3 grid from 1 at the top left to 9 at the bottom right.
+fun cand_x(c: CellCoord, d: i64) -> i32 = cell_x(c) + (((d - 1) % 3) as i32) * (CELL / 3) + CELL / 6;
+fun cand_y(c: CellCoord, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL / 3) + CELL / 6;
+
+fun fill_cell(canvas: Canvas, c: CellCoord, color: Color) = canvas.fill(color, cell_x(c), cell_y(c), CELL, CELL);
+
+fun draw_in_cell(canvas: Canvas, t: Text, c: CellCoord) = canvas.text(t, cell_x(c) + CELL / 2, cell_y(c) + CELL / 2, true);
+
+fun draw_board_background(canvas: Canvas) = canvas.fill(WHITE, ORIGIN, ORIGIN, BOARD, BOARD);
+
+# Thin lines between cells, thick ones around boxes.
+fun draw_grid(canvas: Canvas) = {
+	var line = 0;
+	while (line <= 9) {
+		let offset = ORIGIN + line * CELL;
+		if (line % 3 == 0) {
+			canvas.fill(rgb(30, 30, 30), offset - 1, ORIGIN - 1, 3, BOARD + 3);
+			canvas.fill(rgb(30, 30, 30), ORIGIN - 1, offset - 1, BOARD + 3, 3);
+		} else {
+			canvas.fill(rgb(180, 180, 180), offset, ORIGIN, 1, BOARD);
+			canvas.fill(rgb(180, 180, 180), ORIGIN, offset, BOARD, 1);
+		}
+		line += 1;
+	}
+}

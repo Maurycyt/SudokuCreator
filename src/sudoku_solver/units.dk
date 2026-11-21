@@ -1,58 +1,70 @@
 import core.containers.*;
 
-# Units and notation (see DESIGN.md, chapter 3).
-# A cell is identified by its row and column (CellCoord); a unit is 0..26 (0-8 rows, 9-17 columns,
-# 18-26 boxes); a digit is 1..9.
+# Board geometry. Rows and columns are 0..8 and digits 1..9. The 27 units are numbered
+# 0-8 (rows), 9-17 (columns) and 18-26 (boxes, left to right, top to bottom).
 
 class CellCoord {
-	row: i32;
-	col: i32;
+	row: i64;
+	col: i64;
+
+	fun ==(other: CellCoord) -> bool = row == other.row and col == other.col;
+	fun !=(other: CellCoord) -> bool = not (self == other);
+
+	fun box_index() -> i64 = (row / 3) * 3 + col / 3;
+
+	# Whether the two cells are distinct and share a unit.
+	fun sees(other: CellCoord) -> bool =
+		self != other and (row == other.row or col == other.col or box_index() == other.box_index());
+
+	fun name() -> String = f"row {row + 1}, column {col + 1}";
 }
 
-fun same_cell(a: CellCoord, b: CellCoord) -> bool = a.row == b.row and a.col == b.col;
+class Unit {
+	id: i64;
+	cells: CellCoord[9];
 
-fun box_of(c: CellCoord) -> i64 = ((c.row / 3) * 3 + c.col / 3) as i64;
-
-# Every cell on the board, row by row.
-fun all_cells() -> List[CellCoord] = {
-	var cells: List[CellCoord];
-	var row = 0;
-	while (row < 9) {
-		var col = 0;
-		while (col < 9) {
-			cells.push(CellCoord(row as i32, col as i32));
-			col += 1;
-		}
-		row += 1;
+	# 1-based; a box is named by its band and stack, e.g. box (2,1) is the middle-left one.
+	fun name() -> String = {
+		if (id < 9) { return f"row {id + 1}"; }
+		if (id < 18) { return f"column {id - 8}"; }
+		let b = id - 18;
+		return f"box ({b / 3 + 1},{b % 3 + 1})";
 	}
+}
+
+fun make_unit(id: i64) -> Unit = {
+	var unit: Unit;
+	unit.id = id;
+	var k = 0;
+	while (k < 9) {
+		if (id < 9) {
+			unit.cells[k] = CellCoord(id, k);
+		} else if (id < 18) {
+			unit.cells[k] = CellCoord(k, id - 9);
+		} else {
+			let b = id - 18;
+			unit.cells[k] = CellCoord((b / 3) * 3 + k / 3, (b % 3) * 3 + k % 3);
+		}
+		k += 1;
+	}
+	return unit;
+}
+
+fun make_units() -> Unit[27] = {
+	var units: Unit[27];
+	var id = 0;
+	while (id < 27) { units[id] = make_unit(id); id += 1; }
+	return units;
+}
+
+# Every cell, row by row.
+fun make_cells() -> CellCoord[81] = {
+	var cells: CellCoord[81];
+	var i = 0;
+	while (i < 81) { cells[i] = CellCoord(i / 9, i % 9); i += 1; }
 	return cells;
 }
 
-# The k-th cell (0..8) of unit u.
-fun unit_cell(u: i64, k: i64) -> CellCoord = {
-	if (u < 9) { return CellCoord(u as i32, k as i32); }
-	if (u < 18) { return CellCoord(k as i32, (u - 9) as i32); }
-	let b = u - 18;
-	return CellCoord(((b / 3) * 3 + k / 3) as i32, ((b % 3) * 3 + k % 3) as i32);
-}
-
-# Units of a cell: which = 0 row, 1 column, 2 box.
-fun unit_of(c: CellCoord, which: i64) -> i64 = {
-	if (which == 0) { return c.row as i64; }
-	if (which == 1) { return 9 + c.col as i64; }
-	return 18 + box_of(c);
-}
-
-# Two distinct cells that share a unit.
-fun sees(a: CellCoord, b: CellCoord) -> bool =
-	not same_cell(a, b) and (a.row == b.row or a.col == b.col or box_of(a) == box_of(b));
-
-# "row 3, column 5" / "row 3" / "column 5" / "box (2,1)" (1-based; a box is named by its
-# row band then column band, e.g. box (2,1) is the middle-left box).
-fun cell_name(c: CellCoord) -> String = f"row {c.row + 1}, column {c.col + 1}";
-fun unit_name(u: i64) -> String = {
-	if (u < 9) { return f"row {u + 1}"; }
-	if (u < 18) { return f"column {u - 8}"; }
-	let b = u - 18;
-	return f"box ({b / 3 + 1},{b % 3 + 1})";
-}
+let UNITS = make_units();
+let CELLS = make_cells();
+let DIGITS = [1i64, 2i64, 3i64, 4i64, 5i64, 6i64, 7i64, 8i64, 9i64];

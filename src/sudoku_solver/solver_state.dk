@@ -1,77 +1,84 @@
 import core.containers.*;
-import src.partial_sudoku.PartialSudoku;
-import src.sudoku_solver.units.*;
+import core.optional.*;
+import SudokuCreator.partial_sudoku.PartialSudoku;
+import SudokuCreator.sudoku_solver.units.*;
 
-# The solver's board: digits + candidates (see DESIGN.md, chapter 4).
+const ALL_CANDIDATES = 1022i64;  # bits 1..9
+
+# The solver's board: placed digits, and the candidates still possible in each empty cell.
 class SolverState {
 	class Cell {
-		value: i64;          # 0 = empty
-		given: bool;         # a digit from the puzzle (drawn in a different color)
-		candidates: u8[9];   # candidates[d - 1] == 1 -> digit d is still possible
+		value: i64;                          # 0 = empty
+		given: bool;                         # entered by the user, not the solver
+		candidates: i64 = ALL_CANDIDATES;    # bit d set = digit d still possible
 	}
 
 	board: Cell[9][9];
 
+	global fun create(puzzle: ref PartialSudoku) -> SolverState = {
+		var s: SolverState;
+		for (c in CELLS) {
+			let d = puzzle.at(c);
+			if (d != 0) {
+				s.place(c, d);
+				s.cell(c).given = true;
+			}
+		}
+		return s;
+	}
+
 	fun cell(c: CellCoord) -> ref Cell = &board[c.row][c.col];
 	fun value(c: CellCoord) -> i64 = cell(c).value;
-	fun has(c: CellCoord, d: i64) -> bool = cell(c).candidates[d - 1] != 0u8;
+	fun has(c: CellCoord, d: i64) -> bool = ((cell(c).candidates >> d) & 1i64) != 0i64;
 
 	fun count(c: CellCoord) -> i64 = {
 		var n = 0;
-		var d = 1;
-		while (d <= 9) { if (has(c, d)) { n += 1; } d += 1; }
+		for (d in DIGITS) { if (has(c, d)) { n += 1; } }
 		return n;
 	}
 
-	fun first_candidate(c: CellCoord) -> i64 = {
-		var d = 1;
-		while (d <= 9 and not has(c, d)) { d += 1; }
-		return d;
+	# The candidate of c, if it has exactly one.
+	fun sole_candidate(c: CellCoord) -> ?i64 = {
+		if (count(c) == 1) {
+			for (d in DIGITS) { if (has(c, d)) { return d; } }
+		}
+		return none;
 	}
 
-	fun eliminate(c: CellCoord, d: i64) = { cell(c).candidates[d - 1] = 0u8; }
+	# The cells of the unit where d is still a candidate, in unit order.
+	fun candidate_cells(unit: ref Unit, d: i64) -> List[CellCoord] = {
+		var cells: List[CellCoord];
+		for (c in unit.cells) { if (has(c, d)) { cells.push(c); } }
+		return cells;
+	}
 
-	# Places d in c and crosses out d from its peers (a human does this "in their head", not as its own step).
+	fun count_in(unit: ref Unit, d: i64) -> i64 = {
+		var n = 0;
+		for (c in unit.cells) { if (value(c) == d) { n += 1; } }
+		return n;
+	}
+
+	fun eliminate(c: CellCoord, d: i64) = { cell(c).candidates &= ~(1i64 << d); }
+
+	# Places d in c and removes it from the candidates of every cell that sees c.
 	fun place(c: CellCoord, d: i64) = {
 		cell(c).value = d;
-		var k = 1;
-		while (k <= 9) { eliminate(c, k); k += 1; }
-		let cells = all_cells();
-		var i = 0;
-		while (i < cells.length()) { let p = cells.at(i); if (sees(c, p)) { eliminate(p, d); } i += 1; }
+		cell(c).candidates = 0;
+		for (p in CELLS) { if (c.sees(p)) { eliminate(p, d); } }
 	}
 
 	fun solved() -> bool = {
-		let cells = all_cells();
-		var i = 0;
-		while (i < cells.length()) { if (value(cells.at(i)) == 0) { return false; } i += 1; }
+		for (c in CELLS) { if (value(c) == 0) { return false; } }
 		return true;
 	}
 
-	# Whether digit d is already placed in unit u.
-	fun unit_has(u: i64, d: i64) -> bool = {
-		var k = 0;
-		while (k < 9) { if (value(unit_cell(u, k)) == d) { return true; } k += 1; }
+	# Whether the board is provably unsolvable: a unit holds a digit twice, or an empty cell has
+	# no candidates left.
+	fun has_contradiction() -> bool = {
+		for (unit in UNITS) {
+			for (d in DIGITS) { if (count_in(&unit, d) > 1) { return true; } }
+		}
+		for (c in CELLS) { if (value(c) == 0 and cell(c).candidates == 0) { return true; } }
 		return false;
-	}
-
-	global fun create(partial: PartialSudoku) -> SolverState = {
-		var s: SolverState;
-		let cells = all_cells();
-		var i = 0;
-		while (i < cells.length()) {
-			let c = cells.at(i);
-			var d = 1;
-			while (d <= 9) { s.cell(c).candidates[d - 1] = 1u8; d += 1; }
-			i += 1;
-		}
-		i = 0;
-		while (i < cells.length()) {
-			let c = cells.at(i);
-			let v = partial.board[c.row][c.col].value;
-			if (v != 0) { s.place(c, v); s.cell(c).given = true; }
-			i += 1;
-		}
-		return s;
 	}
 }

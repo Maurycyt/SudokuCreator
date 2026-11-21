@@ -1,121 +1,85 @@
 import core.containers.*;
-import src.sudoku_solver.units.*;
-import src.sudoku_solver.solver_state.SolverState;
-import src.sudoku_solver.explanation.*;
-import src.sudoku_solver.strategies.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
 
-# The simplest strategies. Each one places a single digit.
-# Steps: first the explanation (nothing placed yet), then the result (the digit in green).
+# Strategies that place a single digit, explained in two steps: the reasoning, then the placement.
 
 # Full House: a unit has one empty cell left.
-fun find_full_house(s: ref SolverState) -> List[Step] = {
-	var sb: StepsBuilder;
-	var u = 0;
-	while (u < 27 and sb.steps.length() == 0) {
+fun find_full_house(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+	for (unit in UNITS) {
 		var empty: CellCoord;
-		var count = 0;
-		var k = 0;
-		while (k < 9) {
-			let c = unit_cell(u, k);
-			if (s.value(c) == 0) { empty = c; count += 1; }
-			k += 1;
+		var empty_count = 0;
+		for (c in unit.cells) {
+			if (s.value(c) == 0) { empty = c; empty_count += 1; }
 		}
-		# A conflict elsewhere on the board (e.g. a duplicate the user just typed) can leave this
-		# cell with no candidate at all; first_candidate() then runs off the end at 10, which is
-		# not a real digit, so skip it rather than place a bogus one.
-		if (count == 1 and s.first_candidate(empty) <= 9) {
-			let d = s.first_candidate(empty);
-			sb.step(f"{unit_name(u)} has one empty cell left.");
-			sb.unit(u, Role.Unit);
-			sb.step_keep(f"Only {d} is missing from it.");
-			sb.place(empty, d);
-		}
-		u += 1;
+		if (empty_count != 1) { continue; }
+		let d = s.sole_candidate(empty);
+		if (d.isEmpty()) { continue; }  # only possible on a board with a contradiction
+
+		sb.step(f"{unit.name()} has one empty cell left.");
+		sb.unit(unit.id, Role.Unit);
+		sb.step_keep(f"Only {d.value()} is missing from it.");
+		sb.place(empty, d.value());
+		return true;
 	}
-	return copy sb.steps;
+	return false;
 }
 
-# Hidden Single: digit d has one possible place left in a unit.
-# Order like a human would: boxes first (18..26), then rows and columns.
-fun find_hidden_single(s: ref SolverState) -> List[Step] = {
-	var sb: StepsBuilder;
+# Hidden Single: a digit has one possible cell left in a unit. Boxes are searched first, as a
+# human would.
+fun find_hidden_single(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
 	var i = 0;
-	while (i < 27 and sb.steps.length() == 0) {
-		let u = (i + 18) % 27;
-		var d = 1;
-		while (d <= 9 and sb.steps.length() == 0) {
-			var target: CellCoord;
-			var count = 0;
-			var k = 0;
-			while (k < 9) {
-				let c = unit_cell(u, k);
-				if (s.has(c, d)) { target = c; count += 1; }
-				k += 1;
-			}
-			if (count == 1 and not s.unit_has(u, d)) {
-				sb.step(f"In {unit_name(u)}, all cells but one cannot contain digit {d}, because they share a row, column, or box with another cell that already contains it.");
-				sb.unit(u, Role.Unit);
-				explain_excluders(s, u, d, target, &sb);
-				sb.step_keep(f"So digit {d} can only go in {cell_name(target)}.");
-				sb.place(target, d);
-			}
-			d += 1;
-		}
+	while (i < 27) {
+		let unit = UNITS[(i + 18) % 27];
 		i += 1;
-	}
-	return copy sb.steps;
-}
+		for (d in DIGITS) {
+			let cells = s.candidate_cells(&unit, d);
+			if (cells.length() != 1 or s.count_in(&unit, d) > 0) { continue; }
 
-# For each empty cell of unit u other than target, connects it to the cell that excludes digit d from it.
-fun explain_excluders(s: ref SolverState, u: i64, d: i64, target: CellCoord, sb: ref StepsBuilder) = {
-	var k = 0;
-	while (k < 9) {
-		let c = unit_cell(u, k);
-		if (not same_cell(c, target) and s.value(c) == 0) { mark_exclusion(s, c, d, sb); }
-		k += 1;
-	}
-}
-
-# Finds a cell holding digit d that excludes it from cell c, and connects the two: a straight line
-# when they share a row or column, otherwise a highlight of their shared box.
-fun mark_exclusion(s: ref SolverState, c: CellCoord, d: i64, sb: ref StepsBuilder) = {
-	let cells = all_cells();
-	var i = 0;
-	var found = false;
-	while (i < cells.length() and not found) {
-		let p = cells.at(i);
-		if (s.value(p) == d and sees(c, p)) {
-			found = true;
-			if (p.row == c.row or p.col == c.col) {
-				sb.line(c, p, Role.Excluder);
-			} else {
-				sb.unit(18 + box_of(p), Role.Excluded);
+			let target = cells.at(0);
+			sb.step(f"In {unit.name()}, all cells but one cannot contain digit {d}, because they share a row, column, or box with another cell that already contains it.");
+			sb.unit(unit.id, Role.Unit);
+			for (c in unit.cells) {
+				if (c != target and s.value(c) == 0) { mark_exclusion(s, c, d, sb); }
 			}
-			sb.cell(p, Role.Excluder);
+			sb.step_keep(f"So digit {d} can only go in {target.name()}.");
+			sb.place(target, d);
+			return true;
 		}
-		i += 1;
 	}
+	return false;
 }
 
 # Naked Single: a cell has exactly one candidate.
-fun find_naked_single(s: ref SolverState) -> List[Step] = {
-	var sb: StepsBuilder;
-	let cells = all_cells();
-	var i = 0;
-	while (i < cells.length() and sb.steps.length() == 0) {
-		let c = cells.at(i);
-		if (s.value(c) == 0 and s.count(c) == 1) {
-			let d = s.first_candidate(c);
-			sb.step(f"At {cell_name(c)}, all digits but one are excluded, because each already appears in its row, column, or box.");
-			var e = 1;
-			while (e <= 9) {
-				if (e != d) { mark_exclusion(s, c, e, &sb); }
-				e += 1;
-			}
-			sb.step_keep(f"So only {d} fits there.");
-			sb.place(c, d);
+fun find_naked_single(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+	for (c in CELLS) {
+		let d = s.sole_candidate(c);  # filled cells have no candidates
+		if (d.isEmpty()) { continue; }
+
+		sb.step(f"At {c.name()}, all digits but one are excluded, because each already appears in its row, column, or box.");
+		for (e in DIGITS) {
+			if (e != d.value()) { mark_exclusion(s, c, e, sb); }
 		}
-		i += 1;
+		sb.step_keep(f"So only {d.value()} fits there.");
+		sb.place(c, d.value());
+		return true;
 	}
-	return copy sb.steps;
+	return false;
+}
+
+# Marks a cell holding d that excludes d from c: connected by a line when they share a row or
+# column, otherwise by highlighting their shared box.
+fun mark_exclusion(s: ref SolverState, c: CellCoord, d: i64, sb: ref StepsBuilder) = {
+	for (p in CELLS) {
+		if (s.value(p) != d or not c.sees(p)) { continue; }
+		if (p.row == c.row or p.col == c.col) {
+			sb.line(c, p, Role.Excluder);
+		} else {
+			sb.unit(18 + p.box_index(), Role.Excluded);
+		}
+		sb.cell(p, Role.Excluder);
+		return;
+	}
 }

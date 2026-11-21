@@ -1,16 +1,16 @@
-import src.sudoku_solver.units.CellCoord;
+import SudokuCreator.sudoku_solver.units.CellCoord;
 
-# What to color on the board (see DESIGN.md, chapter 5): a strategy does not draw, it DESCRIBES.
-# A role is semantics; the GUI (src/step_view.dk) picks the colors.
+# What a step highlights on the board. Roles carry meaning only; the step viewer picks colors.
 
 namespace Role {
-	const Unit = 0;       # the unit being searched (light yellow)
-	const Excluded = 1;   # a row/column/box excluded by a digit (light blue)
-	const Excluder = 2;   # the digit that excludes (strong blue)
+	const Unit = 0;       # the unit being searched
+	const Excluded = 1;   # an area excluded by a digit
+	const Excluder = 2;   # the digit that excludes
 	const Pattern = 3;    # a candidate forming the pattern
 	const Target = 4;     # the cell where the effect happens
 	const Eliminated = 5; # a candidate being crossed out
-	const Placed = 6;     # a digit being entered (green)
+	const Placed = 6;     # a digit being entered
+	const Count = 7;
 }
 
 class UnitMark { unit: i64; role: i64; }
@@ -18,5 +18,4 @@ class CellMark { cell: CellCoord; role: i64; }
 class CandMark { cell: CellCoord; digit: i64; role: i64; }
 class LineMark { from: CellCoord; to: CellCoord; role: i64; }
 
-# One coloring: a whole unit, a cell, a candidate, or a connecting line. The GUI tells them apart via match.
 const Mark = UnitMark | CellMark | CandMark | LineMark;

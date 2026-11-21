@@ -1,0 +1,95 @@
+import core.builtins.*;
+import core.containers.*;
+import sdl2.*;
+
+class Color { r: u8; g: u8; b: u8; }
+
+fun rgb(r: i64, g: i64, b: i64) -> Color = Color(r as u8, g as u8, b as u8);
+
+fun lerp(a: u8, b: u8, t: f64) -> u8 = ((a as f64) + t * ((b as f64) - (a as f64))) as u8;
+fun lerp(a: Color, b: Color, t: f64) -> Color = Color(lerp(a.r, b.r, t), lerp(a.g, b.g, t), lerp(a.b, b.b, t));
+
+let BACKGROUND = rgb(245, 243, 236);
+let WHITE = rgb(255, 255, 255);
+let SELECTION = rgb(190, 215, 255);
+let BLUE = rgb(125, 170, 250);
+let GREEN = rgb(150, 235, 160);
+let YELLOW = rgb(255, 210, 90);
+let RED = rgb(255, 130, 130);
+let INK = rgb(20, 20, 20);          # given digits, titles
+let TEXT = rgb(40, 40, 40);
+let HINT = rgb(90, 90, 90);
+let ENTERED = rgb(40, 90, 200);     # digits entered in the editor or by the solver
+
+fun cstr(s: str) -> cptr char = builtins.ptr_from_slice[char](s) as cptr char;
+
+# A rendered piece of text.
+class Text {
+	tex: cptr SDL_Texture;
+	w: i32;
+	h: i32;
+
+	fun free() = SDL_DestroyTexture(tex);
+}
+
+class Canvas {
+	renderer: cptr SDL_Renderer;
+
+	fun set_color(c: Color) = { SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, 255u8); }
+
+	fun clear(c: Color) = {
+		set_color(c);
+		SDL_RenderClear(renderer);
+	}
+
+	fun fill(c: Color, x: i32, y: i32, w: i32, h: i32) = {
+		set_color(c);
+		var rect = SDL_Rect(x, y, w, h);
+		SDL_RenderFillRect(renderer, &rect as cptr SDL_Rect);
+	}
+
+	# A line 3 px wide.
+	fun thick_line(c: Color, x1: i32, y1: i32, x2: i32, y2: i32) = {
+		set_color(c);
+		var o = -1;
+		while (o <= 1) {
+			SDL_RenderDrawLine(renderer, x1 + o, y1, x2 + o, y2);
+			SDL_RenderDrawLine(renderer, x1, y1 + o, x2, y2 + o);
+			o += 1;
+		}
+	}
+
+	# Draws t vertically centered on y, with its left edge at x or, if `centered`, centered on x.
+	fun text(t: Text, x: i32, y: i32, centered: bool = false) = {
+		var src = SDL_Rect(0, 0, t.w, t.h);
+		var dst = SDL_Rect(if centered then x - t.w / 2 else x, y - t.h / 2, t.w, t.h);
+		SDL_RenderCopy(renderer, t.tex, &src as cptr SDL_Rect, &dst as cptr SDL_Rect);
+	}
+
+	# Renders s, wrapping lines at `wrap` pixels (0 = no wrapping).
+	fun make_text(font: cptr TTF_Font, s: str, c: Color, wrap: u32 = 0u32) -> Text = {
+		var z = s.toString();
+		z.append('\0');
+		var color = SDL_Color(c.r, c.g, c.b, 255u8);
+		let surface =
+			if wrap == 0u32 then dk_TTF_RenderUTF8_Blended(font, cstr(z.asSlice()), &color as cptr SDL_Color)
+			else dk_TTF_RenderUTF8_Blended_Wrapped(font, cstr(z.asSlice()), &color as cptr SDL_Color, wrap);
+		let result = Text(SDL_CreateTextureFromSurface(renderer, surface), surface[0].w, surface[0].h);
+		SDL_FreeSurface(surface);
+		return result;
+	}
+
+	fun make_text(font: cptr TTF_Font, s: String, c: Color, wrap: u32 = 0u32) -> Text =
+		make_text(font, s.asSlice(), c, wrap);
+
+	# Texts for digits 1..9, at the matching index.
+	fun make_digits(font: cptr TTF_Font, c: Color) -> Text[10] = {
+		var digits: Text[10];
+		var d = 1;
+		while (d <= 9) {
+			digits[d] = make_text(font, f"{d}", c);
+			d += 1;
+		}
+		return digits;
+	}
+}

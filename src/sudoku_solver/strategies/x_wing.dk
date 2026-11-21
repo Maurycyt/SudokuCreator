@@ -1,103 +1,79 @@
 import core.containers.*;
-import src.sudoku_solver.units.*;
-import src.sudoku_solver.solver_state.SolverState;
-import src.sudoku_solver.explanation.*;
-import src.sudoku_solver.strategies.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
 
-# X-Wing: digit d has exactly two candidate positions in each of two rows, and those positions
-# fall in the same two columns. One of the rows must hold d in one column and the other row in
-# the other, so d can be eliminated from both columns in every other row (and symmetrically for
-# two columns restricted to the same two rows).
+# X-Wing: in each of two rows, digit d has exactly two candidates, and they lie in the same two
+# columns. Each of those columns then holds d in one of the two rows, so d can be eliminated
+# from the rest of both columns. The same holds with rows and columns swapped.
 
-# orient == 0: lines are rows, cross positions are columns. orient == 1: lines are columns,
-# cross positions are rows.
-fun oriented_cell(orient: i64, line: i64, cross: i64) -> CellCoord =
-	if orient == 0 then CellCoord(line as i32, cross as i32) else CellCoord(cross as i32, line as i32);
-
-fun oriented_line_name(orient: i64, line: i64) -> String = if orient == 0 then unit_name(line) else unit_name(9 + line);
-fun oriented_cross_name(orient: i64, cross: i64) -> String = if orient == 0 then unit_name(9 + cross) else unit_name(cross);
-
-# The cross positions (0..8) within `line` where digit d is still a candidate.
-fun line_candidates(s: ref SolverState, orient: i64, line: i64, d: i64) -> List[i64] = {
-	var result: List[i64];
-	var cross = 0;
-	while (cross < 9) {
-		if (s.has(oriented_cell(orient, line, cross), d)) { result.push(cross); }
-		cross += 1;
-	}
-	return result;
-}
-
-fun find_x_wing(s: ref SolverState) -> List[Step] = {
-	var sb: StepsBuilder;
-	var orient = 0;
-	while (orient < 2 and sb.steps.length() == 0) {
-		var d = 1;
-		while (d <= 9 and sb.steps.length() == 0) {
-			var line_a = 0;
-			while (line_a < 9 and sb.steps.length() == 0) {
-				let pos_a = line_candidates(s, orient, line_a, d);
-				if (pos_a.length() == 2) {
-					var line_b = line_a + 1;
-					while (line_b < 9 and sb.steps.length() == 0) {
-						let pos_b = line_candidates(s, orient, line_b, d);
-						if (pos_b.length() == 2 and pos_a.at(0) == pos_b.at(0) and pos_a.at(1) == pos_b.at(1)) {
-							try_x_wing(s, orient, line_a, line_b, pos_a.at(0), pos_a.at(1), d, &sb);
-						}
-						line_b += 1;
-					}
+fun find_x_wing(s: ref SolverState, sb: ref StepsBuilder) -> bool = {
+	for (first_line in [0i64, 9i64]) {  # rows, then columns
+		for (d in DIGITS) {
+			var a = first_line;
+			while (a < first_line + 9) {
+				let in_a = s.candidate_cells(&UNITS[a], d);
+				var b = a + 1;
+				while (in_a.length() == 2 and b < first_line + 9) {
+					let in_b = s.candidate_cells(&UNITS[b], d);
+					if (in_b.length() == 2 and try_x_wing(s, sb, d, &UNITS[a], &UNITS[b], &in_a, &in_b)) { return true; }
+					b += 1;
 				}
-				line_a += 1;
+				a += 1;
 			}
-			d += 1;
 		}
-		orient += 1;
 	}
-	return copy sb.steps;
+	return false;
 }
 
-# Of the two same-cross corner cells on line_a and line_b, the one farther from t along the line
-# axis: the line from t can run through the nearer corner on its way there.
-fun x_wing_anchor(orient: i64, line_a: i64, line_b: i64, c1: i64, c2: i64, t: CellCoord) -> CellCoord = {
-	let t_line = if orient == 0 then t.row as i64 else t.col as i64;
-	let t_cross = if orient == 0 then t.col as i64 else t.row as i64;
-	let cross = if t_cross == c1 then c1 else c2;
-	let da = if t_line > line_a then t_line - line_a else line_a - t_line;
-	let db = if t_line > line_b then t_line - line_b else line_b - t_line;
-	let anchor_line = if da >= db then line_a else line_b;
-	return oriented_cell(orient, anchor_line, cross);
-}
+# The unit crossing `line` at c: c's column if `line` is a row, c's row if it is a column.
+fun crossing_unit(line: ref Unit, c: CellCoord) -> i64 = if line.id < 9 then 9 + c.col else c.row;
 
-fun try_x_wing(s: ref SolverState, orient: i64, line_a: i64, line_b: i64, c1: i64, c2: i64, d: i64, sb: ref StepsBuilder) = {
+fun abs(x: i64) -> i64 = if x < 0 then -x else x;
+fun distance(a: CellCoord, b: CellCoord) -> i64 = abs(a.row - b.row) + abs(a.col - b.col);
+
+# Of the pattern cells p and q, the one farther from c, so a line from c to it passes the other.
+fun farther(c: CellCoord, p: CellCoord, q: CellCoord) -> CellCoord =
+	if distance(c, p) >= distance(c, q) then p else q;
+
+# `in_a` and `in_b` are the two candidate cells for d in line_a and line_b.
+fun try_x_wing(s: ref SolverState, sb: ref StepsBuilder, d: i64, line_a: ref Unit, line_b: ref Unit,
+		in_a: ref List[CellCoord], in_b: ref List[CellCoord]) -> bool = {
+	let cross_1 = crossing_unit(line_a, in_a.at(0));
+	let cross_2 = crossing_unit(line_a, in_a.at(1));
+	if (cross_1 != crossing_unit(line_b, in_b.at(0)) or cross_2 != crossing_unit(line_b, in_b.at(1))) { return false; }
+
 	var targets: List[CellCoord];
-	var other = 0;
-	while (other < 9) {
-		if (other != line_a and other != line_b) {
-			let cell1 = oriented_cell(orient, other, c1);
-			if (s.has(cell1, d)) { targets.push(cell1); }
-			let cell2 = oriented_cell(orient, other, c2);
-			if (s.has(cell2, d)) { targets.push(cell2); }
+	var anchors: List[CellCoord];  # where each target's connecting line ends
+	for (k in [0i64, 1i64]) {
+		let p = in_a.at(k);
+		let q = in_b.at(k);
+		for (c in UNITS[crossing_unit(line_a, p)].cells) {
+			if (s.has(c, d) and c != p and c != q) {
+				targets.push(c);
+				anchors.push(farther(c, p, q));
+			}
 		}
-		other += 1;
 	}
+	if (targets.length() == 0) { return false; }
 
-	if (targets.length() > 0) {
-		sb.step(f"{oriented_line_name(orient, line_a)} and {oriented_line_name(orient, line_b)} can only place digit {d} in {oriented_cross_name(orient, c1)} and {oriented_cross_name(orient, c2)}, forming an X-Wing.");
-		sb.cell(oriented_cell(orient, line_a, c1), Role.Pattern);
-		sb.cell(oriented_cell(orient, line_a, c2), Role.Pattern);
-		sb.cell(oriented_cell(orient, line_b, c1), Role.Pattern);
-		sb.cell(oriented_cell(orient, line_b, c2), Role.Pattern);
-		var i = 0;
-		while (i < targets.length()) {
-			let t = targets.at(i);
-			sb.line(t, x_wing_anchor(orient, line_a, line_b, c1, c2, t), Role.Excluder);
-			i += 1;
-		}
-		sb.step_keep(f"So digit {d} can be eliminated from {oriented_cross_name(orient, c1)} and {oriented_cross_name(orient, c2)} everywhere else.");
-		i = 0;
-		while (i < targets.length()) {
-			sb.eliminate(targets.at(i), d);
-			i += 1;
-		}
+	let crosses = f"{UNITS[cross_1].name()} and {UNITS[cross_2].name()}";
+	sb.step(f"{line_a.name()} and {line_b.name()} can only place digit {d} in {crosses}, forming an X-Wing.");
+	sb.cell(in_a.at(0), Role.Pattern);
+	sb.cell(in_a.at(1), Role.Pattern);
+	sb.cell(in_b.at(0), Role.Pattern);
+	sb.cell(in_b.at(1), Role.Pattern);
+	var i = 0;
+	while (i < targets.length()) {
+		sb.line(targets.at(i), anchors.at(i), Role.Excluder);
+		i += 1;
 	}
+	sb.step_keep(f"So digit {d} can be eliminated from {crosses} everywhere else.");
+	i = 0;
+	while (i < targets.length()) {
+		sb.eliminate(targets.at(i), d);
+		i += 1;
+	}
+	return true;
 }

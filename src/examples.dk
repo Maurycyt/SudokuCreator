@@ -1,0 +1,13 @@
+import core.containers.*;
+
+# Example boards, each solvable with strategies no harder than `max_difficulty`.
+class ExampleBoard { name: str; board: str; max_difficulty: f64; }
+
+fun example_boards() -> List[ExampleBoard] = {
+	var examples: List[ExampleBoard];
+	examples.push(ExampleBoard("Full House", ".23456789456.89123789123.562.45678915678.12348912345.734.67891267891.34591234567.", 1.0));
+	examples.push(ExampleBoard("Hidden Single", "68.2..4.7...8.73.9..5.....2....34.8..4...9.2..1.68.5...3.4..7.596.7.....2.7......", 1.2));
+	examples.push(ExampleBoard("Naked Single", "6.7.3.1...8.6.....1....836.21....47..4.12.6.5..65...3.8...7.952..........3...97..", 2.3));
+	examples.push(ExampleBoard("X-Wing", "1...93..4..7......4.......2..8..247....7.....3.5.6.9.....1...63.....61...3.28....", 3.5));
+	return examples;
+}

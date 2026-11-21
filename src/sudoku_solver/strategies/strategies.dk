@@ -1,31 +1,30 @@
 import core.containers.*;
-import src.sudoku_solver.units.*;
-import src.sudoku_solver.solver_state.SolverState;
-import src.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.solver_state.SolverState;
+import SudokuCreator.sudoku_solver.explanation.*;
 
-# Strategy format (see DESIGN.md, chapter 6).
-# A strategy does not change the state: find(state) returns a list of steps to show (empty = found nothing).
-# One step = one press of the right arrow: what to color + a caption at the bottom.
-# The solver takes a move's effects (placements/eliminations) from the LAST step in the list.
+# A strategy looks for one move without changing the state. If it finds one, it records the
+# steps explaining it and returns true. Each step is one frame of the step viewer; the move's
+# effects are taken from the last step.
 
 class CandRef { cell: CellCoord; digit: i64; }
 
 class Step {
-	strategy: String;             # strategy name (set by the solver)
-	difficulty: f64;              # difficulty of the strategy that produced this step (set by the solver)
-	text: String;                 # caption below the board
-	marks: List[Mark];            # what to color
-	placements: List[CandRef];    # placements (singles only)
-	eliminations: List[CandRef];  # eliminations
+	strategy: str = "";           # set by the solver
+	difficulty: f64;              # set by the solver
+	text: String;                 # caption
+	marks: List[Mark];
+	placements: List[CandRef];
+	eliminations: List[CandRef];
 }
 
 class Strategy {
 	name: str;
 	difficulty: f64;
-	find: funptr(ref SolverState) -> List[Step];
+	find: funptr(ref SolverState, ref StepsBuilder) -> bool;
 }
 
-# Builds a list of steps: sb.step("..."); sb.unit(u, Role.Unit); sb.place(c, d); ...
+# Usage: sb.step("..."); sb.unit(u, Role.Unit); sb.step_keep("..."); sb.place(c, d);
 class StepsBuilder {
 	steps: List[Step];
 
@@ -36,18 +35,20 @@ class StepsBuilder {
 		s.text = move text;
 		steps.push(move s);
 	}
-	# A new step that starts as a copy of the previous one (colors and effects carry over).
+
+	# A new step continuing the previous one: its marks and effects carry over.
 	fun step_keep(text: String) = {
 		var s = copy cur();
 		s.text = move text;
 		steps.push(move s);
 	}
+
 	fun unit(u: i64, role: i64) = { cur().marks.push(UnitMark(u, role)); }
 	fun cell(c: CellCoord, role: i64) = { cur().marks.push(CellMark(c, role)); }
 	fun cand(c: CellCoord, d: i64, role: i64) = { cur().marks.push(CandMark(c, d, role)); }
-	# A connecting line from one cell to another, e.g. from an excluded cell to the cell excluding it.
 	fun line(from: CellCoord, to: CellCoord, role: i64) = { cur().marks.push(LineMark(from, to, role)); }
-	# Effects: records the move and immediately marks it to be drawn.
+
+	# Effects; each is also marked on the board.
 	fun place(c: CellCoord, d: i64) = { cur().placements.push(CandRef(c, d)); cell(c, Role.Placed); }
 	fun eliminate(c: CellCoord, d: i64) = { cur().eliminations.push(CandRef(c, d)); cand(c, d, Role.Eliminated); }
 }

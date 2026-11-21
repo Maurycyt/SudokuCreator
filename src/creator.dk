@@ -1,84 +1,39 @@
-import core.builtins.*;
-import core.containers.*;
-import src.partial_sudoku.PartialSudoku;
-import src.sudoku_solver.SudokuSolver;
-import src.sudoku_solver.SolveResult;
-import src.sudoku_solver.difficulty.*;
+import SudokuCreator.partial_sudoku.PartialSudoku;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.SudokuSolver;
+import SudokuCreator.sudoku_solver.SolveResult;
+import SudokuCreator.sudoku_solver.difficulty.*;
 
-# Sudoku game state: a 9x9 table of cells. A cell's value is 0..9, where 0 means empty.
+# The board being edited, re-analyzed after every change.
+class Creator {
+	puzzle: PartialSudoku;
+	result: SolveResult;          # the strategies' solution of the board
+	difficulty: CellDifficulty;
+	unsolvable: bool;             # the board provably has no solution
+	undetermined: bool;           # some empty cell no known strategy can place
 
-var state: PartialSudoku;
-var solve_result: SolveResult;           # steps of the last try_solve(), for the step viewer
-var cell_difficulty: CellDifficulty;     # live analysis of the current board, for the editor view
-var board_unsolvable: bool;              # a direct contradiction in the entered digits
-var board_has_undetermined: bool;        # some empty cell the known strategies can't place
+	fun get(c: CellCoord) -> i64 = puzzle.at(c);
 
-fun set_cell(row: i64, col: i64, value: i64) = {
-	state.board[row][col].value = value;
-	analyze();
-}
-
-fun get_cell(row: i64, col: i64) =
-	state.board[row][col].value;
-
-# Re-runs the strategies against the current board and records, per empty cell, how hard it
-# would be to fill in right now. Called after every edit.
-fun analyze() = {
-	var solver = SudokuSolver.create(state);
-	let result = solver.solve();
-	cell_difficulty = analyze_difficulty(&result);
-
-	# Checked on the state the strategies left behind, not the raw input: a contradiction can be
-	# a direct duplicate, but it can just as well only show up after some sound deductions (e.g.
-	# a chain of singles, or an X-Wing elimination) squeeze some cell's candidates down to none.
-	board_unsolvable = has_contradiction(&solver.state);
-
-	board_has_undetermined = false;
-	var row = 0;
-	while (row < 9) {
-		var col = 0;
-		while (col < 9) {
-			if (get_cell(row, col) == 0 and cell_difficulty.board[row][col] < 0.0) { board_has_undetermined = true; }
-			col += 1;
-		}
-		row += 1;
+	fun set(c: CellCoord, digit: i64) = {
+		puzzle.at(c) = digit;
+		analyze();
 	}
-}
 
-# Solves the current board with the strategies. true = there is something to show.
-fun try_solve() -> bool = {
-	var solver = SudokuSolver.create(state);
-	solve_result = solver.solve();
-	return solve_result.steps.length() > 0;
-}
-
-# Fills the board from an 81-character string ('.' = empty).
-fun load_board(s: str) = {
-	var row = 0;
-	while (row < 9) {
-		var col = 0;
-		while (col < 9) {
-			let ch = s[row * 9 + col];
-			set_cell(row, col, if ch == '.' then 0i64 else (ch - '0') as i64);
-			col += 1;
-		}
-		row += 1;
+	# See PartialSudoku.parse for the format.
+	fun load(board: str) = {
+		puzzle = PartialSudoku.parse(board);
+		analyze();
 	}
-}
 
-# The example used on startup.
-fun load_example() = {
-	load_board("1...93..4..7......4.......2..8..247....7.....3.5.6.9.....1...63.....61...3.28....");
-}
-
-class ExampleBoard { name: str; board: str; max_difficulty: f64; }
-
-# A library of boards, each needing strategies no harder than `max_difficulty`, for the L dialog.
-fun example_boards() -> List[ExampleBoard] = {
-	var examples: List[ExampleBoard];
-	examples.push(ExampleBoard("Full House", ".23456789456.89123789123.562.45678915678.12348912345.734.67891267891.34591234567.", 1.0));
-	examples.push(ExampleBoard("Hidden Single", "68.2..4.7...8.73.9..5.....2....34.8..4...9.2..1.68.5...3.4..7.596.7.....2.7......", 1.2));
-	examples.push(ExampleBoard("Naked Single", "6.7.3.1...8.6.....1....836.21....47..4.12.6.5..65...3.8...7.952..........3...97..", 2.3));
-	examples.push(ExampleBoard("X-Wing", "1...93..4..7......4.......2..8..247....7.....3.5.6.9.....1...63.....61...3.28....", 3.5));
-	return examples;
+	fun analyze() = {
+		var solver = SudokuSolver.create(&puzzle);
+		result = solver.solve();
+		difficulty = CellDifficulty.of(&result);
+		# Checked after solving: sound deductions can expose a contradiction the digits alone don't.
+		unsolvable = solver.state.has_contradiction();
+		undetermined = false;
+		for (c in CELLS) {
+			if (get(c) == 0 and not difficulty.placeable(c)) { undetermined = true; }
+		}
+	}
 }

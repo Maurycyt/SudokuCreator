@@ -1,283 +1,158 @@
 import core.builtins.*;
 import core.containers.*;
+import core.optional.*;
 import sdl2.*;
-import SudokuCreator.creator.*;
-import SudokuCreator.step_view.*;
+import SudokuCreator.graphics.*;
+import SudokuCreator.board_view.*;
+import SudokuCreator.creator.Creator;
+import SudokuCreator.examples.*;
+import SudokuCreator.editor_view.EditorView;
+import SudokuCreator.example_dialog.ExampleDialog;
+import SudokuCreator.step_view.StepView;
 import SudokuCreator.headless.*;
+import SudokuCreator.sudoku_solver.units.CellCoord;
 
 # Sudoku Creator: a board editor with a live solvability heatmap.
-# Mouse or arrows select a cell, 1-9 enter a digit, 0/Backspace/Delete clear it. Every edit
-# re-analyzes the board: empty cells the known strategies can currently fill in are tinted on a
-# gradient from blue (easy) through green and yellow to red (hard); cells no known strategy can
-# currently place are left white. If that leaves any cells undetermined, or the entered digits
-# directly contradict each other, a warning banner appears on the right.
-# Space: solve and browse the steps (left/right = step, Esc = back).
-# L: open the example board dialog, then 1-9 picks a board (Esc cancels).
+#
+# Editor: click or use the arrows to select a cell, 1-9 to enter a digit, 0, Backspace or Delete
+# to clear it, Esc to quit. Space browses the solver's steps (left/right, Esc returns).
+# L opens the example list (1-9 loads a board, Esc cancels).
 
-const CELL = 60;
-const ORIGIN = 20;
-const BOARD = 540;
-const WIDTH = 900;
-const HEIGHT = 720;
-
-class Text {
-	tex: cptr SDL_Texture;
-	w: i32;
-	h: i32;
+namespace Mode {
+	const Edit = 0;
+	const Browse = 1;    # the solver's steps
+	const Examples = 2;  # the example list
 }
 
-fun cstr(s: str) -> cptr char = builtins.ptr_from_slice[char](s) as cptr char;
+class Fonts {
+	large: cptr TTF_Font;   # board digits, titles
+	medium: cptr TTF_Font;  # text
+	small: cptr TTF_Font;   # candidates
 
-fun make_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, text: cptr char, r: u8, g: u8, b: u8) -> Text = {
-	var color: SDL_Color;
-	color.r = r;
-	color.g = g;
-	color.b = b;
-	color.a = 255u8;
-	let surface = dk_TTF_RenderUTF8_Blended(font, text, &color as cptr SDL_Color);
-	var result: Text;
-	result.w = surface[0].w;
-	result.h = surface[0].h;
-	result.tex = SDL_CreateTextureFromSurface(renderer, surface);
-	SDL_FreeSurface(surface);
-	return result;
+	global fun open() -> Fonts = {
+		let path = cstr("assets/DejaVuSans.ttf\0");
+		return Fonts(TTF_OpenFont(path, 36), TTF_OpenFont(path, 18), TTF_OpenFont(path, 14));
+	}
+
+	fun loaded() -> bool = large as u64 != 0u64 and medium as u64 != 0u64 and small as u64 != 0u64;
+
+	fun close() = {
+		TTF_CloseFont(large);
+		TTF_CloseFont(medium);
+		TTF_CloseFont(small);
+	}
 }
 
-fun digit_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, d: i64, r: u8, g: u8, b: u8) -> Text = {
-	var buf: u8[2];
-	buf[0] = (48 + d) as u8;
-	buf[1] = 0u8;
-	return make_text(renderer, font, &buf as cptr char, r, g, b);
+class App {
+	canvas: Canvas;
+	creator: Creator;
+	examples: List[ExampleBoard];
+	editor: EditorView;
+	dialog: ExampleDialog;
+	steps: StepView;
+	mode: i64 = Mode.Edit;
+	selected: CellCoord = CellCoord(4, 4);
+	step: i64 = 0;
+	running: bool = true;
+
+	# Starts by browsing the solution of the last example.
+	global fun create(screen: Canvas, fonts: ref Fonts) -> App = {
+		var app: App;
+		app.canvas = screen;
+		app.examples = example_boards();
+		app.editor = EditorView.create(screen, fonts.large, fonts.medium);
+		app.dialog = ExampleDialog.create(screen, fonts.large, fonts.medium, &app.examples);
+		app.steps = StepView.create(screen, fonts.large, fonts.medium, fonts.small);
+		app.creator.load(app.examples.at(app.examples.length() - 1).board);
+		app.browse();
+		return app;
+	}
+
+	fun browse() = {
+		if (creator.result.steps.length() == 0) { return; }
+		steps.reset();
+		step = 0;
+		mode = Mode.Browse;
+	}
+
+	fun handle(event: cptr SDL_Event) = {
+		let kind = SDL_Event_as_type(event)[0];
+		if (kind == SDL_QUIT) {
+			running = false;
+		} else if (kind == SDL_MOUSEBUTTONDOWN and mode == Mode.Edit) {
+			let button = SDL_Event_as_button(event)[0];
+			let cell = cell_at(button.x, button.y);
+			if (cell.nonEmpty()) { selected = cell.value(); }
+		} else if (kind == SDL_KEYDOWN) {
+			let key = SDL_Event_as_key(event)[0].keysym.sym as u32;
+			if (mode == Mode.Edit) { on_edit_key(key); }
+			else if (mode == Mode.Browse) { on_browse_key(key); }
+			else { on_examples_key(key); }
+		}
+	}
+
+	fun on_edit_key(key: u32) = {
+		if (SDLK_1 <= key <= SDLK_9) { creator.set(selected, (key - SDLK_0) as i64); }
+		else if (SDLK_KP_1 <= key <= SDLK_KP_9) { creator.set(selected, (key - SDLK_KP_1) as i64 + 1); }
+		else if (key == SDLK_0 or key == SDLK_BACKSPACE or key == SDLK_DELETE) { creator.set(selected, 0); }
+		else if (key == SDLK_UP and selected.row > 0) { selected.row -= 1; }
+		else if (key == SDLK_DOWN and selected.row < 8) { selected.row += 1; }
+		else if (key == SDLK_LEFT and selected.col > 0) { selected.col -= 1; }
+		else if (key == SDLK_RIGHT and selected.col < 8) { selected.col += 1; }
+		else if (key == SDLK_SPACE) { browse(); }
+		else if (key == SDLK_l) { mode = Mode.Examples; }
+		else if (key == SDLK_ESCAPE) { running = false; }
+	}
+
+	fun on_browse_key(key: u32) = {
+		if (key == SDLK_RIGHT and step + 1 < creator.result.steps.length()) { step += 1; }
+		else if (key == SDLK_LEFT and step > 0) { step -= 1; }
+		else if (key == SDLK_ESCAPE) { mode = Mode.Edit; }
+	}
+
+	fun on_examples_key(key: u32) = {
+		if (SDLK_1 <= key <= SDLK_9) {
+			let i = (key - SDLK_1) as i64;
+			if (i < examples.length()) { creator.load(examples.at(i).board); }
+			mode = Mode.Edit;
+		} else if (key == SDLK_ESCAPE) {
+			mode = Mode.Edit;
+		}
+	}
+
+	fun draw() = {
+		canvas.clear(BACKGROUND);
+		if (mode == Mode.Edit) { editor.draw(canvas, &creator, selected); }
+		else if (mode == Mode.Browse) { steps.draw(canvas, &creator.result, step); }
+		else { dialog.draw(canvas); }
+		SDL_RenderPresent(canvas.renderer);
+	}
 }
 
-# Draws `t` centered at (cx, cy), or with its left edge at cx when `centered` is false.
-fun draw_text(renderer: cptr SDL_Renderer, t: Text, cx: i32, cy: i32, centered: bool) = {
-	var dst: SDL_Rect;
-	dst.x = cx;
-	if (centered) { dst.x = cx - t.w / 2; }
-	dst.y = cy - t.h / 2;
-	dst.w = t.w;
-	dst.h = t.h;
-	var src: SDL_Rect;
-	src.x = 0;
-	src.y = 0;
-	src.w = t.w;
-	src.h = t.h;
-	let copied = SDL_RenderCopy(renderer, t.tex, &src as cptr SDL_Rect, &dst as cptr SDL_Rect);
-}
-
-fun fill_rect(renderer: cptr SDL_Renderer, x: i32, y: i32, w: i32, h: i32) = {
-	var rect: SDL_Rect;
-	rect.x = x;
-	rect.y = y;
-	rect.w = w;
-	rect.h = h;
-	let filled = SDL_RenderFillRect(renderer, &rect as cptr SDL_Rect);
-}
-
-fun set_color(renderer: cptr SDL_Renderer, r: u8, g: u8, b: u8) = {
-	let set = SDL_SetRenderDrawColor(renderer, r, g, b, 255u8);
-}
-
-fun main() = {
-	if (headless_requested()) { return run_headless(); }
+fun main() -> i64 = {
+	var headless = headless_arg();
+	if (headless.nonEmpty()) { return run_headless(headless.value()); }
 
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) { return 1; }
 	if (TTF_Init() != 0) { return 2; }
 	let pos = SDL_WINDOWPOS_CENTERED as i32;
 	let window = SDL_CreateWindow(cstr("Sudoku Creator\0"), pos, pos, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
-	let renderer = SDL_CreateRenderer(window, 0 - 1, 0u32);
-	let font = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 36);
-	let small = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 18);
-	if (font as u64 == 0u64) { return 3; }
+	let canvas = Canvas(SDL_CreateRenderer(window, -1, 0u32));
+	var fonts = Fonts.open();
+	if (not fonts.loaded()) { return 3; }
 
-	var digits: Text[10];
-	var d = 1;
-	while (d <= 9) {
-		digits[d] = digit_text(renderer, font, d, 40u8, 90u8, 200u8);
-		d = d + 1;
-	}
-	let help = make_text(renderer, small, cstr("Click a cell and type 1-9 · Space: solve · L: example\0"), 90u8, 90u8, 90u8);
-	let unsolvable_msg = f"This sudoku has no solution.";
-	let unsolvable_warning = make_wrapped_text(renderer, small, &unsolvable_msg, 260u32);
-	let undetermined_msg = f"Some cells can't be determined yet.";
-	let undetermined_warning = make_wrapped_text(renderer, small, &undetermined_msg, 260u32);
-
-	# The L dialog: a title plus one line per example slot (1-9), built once since the library
-	# of boards is fixed.
-	let dialog_title = make_text(renderer, font, cstr("Load example\0"), 20u8, 20u8, 20u8);
-	let examples = example_boards();
-	var example_lines: Text[10];
-	var ei = 1;
-	while (ei <= 9) {
-		var line: String;
-		if (ei <= examples.length()) {
-			line = f"{ei}: {examples.at(ei - 1).name}";
-		} else {
-			line = f"{ei}: (empty)";
-		}
-		example_lines[ei] = make_wrapped_text(renderer, small, &line, (BOARD - 40) as u32);
-		ei += 1;
-	}
-
-	var choosing_example = false;
-	var selected_row = 4;
-	var selected_col = 4;
-
-	# Solver step viewer.
-	let cand_font = TTF_OpenFont(cstr("assets/DejaVuSans.ttf\0"), 14);
-	var view = StepView.create(renderer, font, cand_font);
-	load_example();                 # right after start, show the solved example immediately
-	var viewing = try_solve();
-	var step_idx: i64 = 0;
-
+	var app = App.create(canvas, &fonts);
 	var event: SDL_Event;
-	let ev = &event as cptr SDL_Event;
-	var running = true;
-	while (running) {
-		while (SDL_PollEvent(ev) != 0) {
-			let kind = SDL_Event_as_type(ev)[0];
-			if (kind == SDL_QUIT) { running = false; }
-			if (kind == SDL_MOUSEBUTTONDOWN) {
-				let x = SDL_Event_as_button(ev)[0].x;
-				let y = SDL_Event_as_button(ev)[0].y;
-				if (not choosing_example and ORIGIN <= x and x < ORIGIN + BOARD and ORIGIN <= y and y < ORIGIN + BOARD) {
-					selected_row = (y - ORIGIN) / CELL;
-					selected_col = (x - ORIGIN) / CELL;
-				}
-			}
-			if (kind == SDL_KEYDOWN) {
-				let key = SDL_Event_as_key(ev)[0].keysym.sym as u32;
-				if (choosing_example) {
-					if (key == SDLK_ESCAPE) { choosing_example = false; }
-					if (SDLK_1 <= key and key <= SDLK_9) {
-						let idx = (key - SDLK_1) as i64;
-						if (idx < examples.length()) { load_board(examples.at(idx).board); }
-						choosing_example = false;
-					}
-				} else {
-					if (viewing) {
-						if (key == SDLK_RIGHT and step_idx + 1 < solve_result.steps.length()) { step_idx += 1; }
-						if (key == SDLK_LEFT and step_idx > 0) { step_idx -= 1; }
-						if (key == SDLK_ESCAPE) { viewing = false; }
-					} else {
-						if (key == SDLK_SPACE and try_solve()) { view.reset(); viewing = true; step_idx = 0; }
-						if (key == SDLK_l) { choosing_example = true; }
-						if (SDLK_1 <= key and key <= SDLK_9) { set_cell(selected_row, selected_col, key - SDLK_0); }
-						if (SDLK_KP_1 <= key and key <= SDLK_KP_9) { set_cell(selected_row, selected_col, key - SDLK_KP_1 + 1u32); }
-						if (key == SDLK_0 or key == SDLK_BACKSPACE or key == SDLK_DELETE) { set_cell(selected_row, selected_col, 0); }
-						if (key == SDLK_UP and selected_row > 0) { selected_row = selected_row - 1; }
-						if (key == SDLK_DOWN and selected_row < 8) { selected_row = selected_row + 1; }
-						if (key == SDLK_LEFT and selected_col > 0) { selected_col = selected_col - 1; }
-						if (key == SDLK_RIGHT and selected_col < 8) { selected_col = selected_col + 1; }
-						if (key == SDLK_ESCAPE) { running = false; }
-					}
-				}
-			}
-		}
-
-		set_color(renderer, 245u8, 243u8, 236u8);
-		let cleared = SDL_RenderClear(renderer);
-
-		if (choosing_example) {
-			# Example dialog: a plain panel over the board with one line per slot.
-			set_color(renderer, 255u8, 255u8, 255u8);
-			fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
-			draw_text(renderer, dialog_title, ORIGIN + 20, ORIGIN + 30, false);
-			var dialog_y = ORIGIN + 70;
-			var di = 1;
-			while (di <= 9) {
-				draw_text(renderer, example_lines[di], ORIGIN + 20, dialog_y, false);
-				dialog_y += example_lines[di].h + 10;
-				di += 1;
-			}
-		} else {
-			# Board background, then live difficulty coloring of empty cells, then the selection.
-			set_color(renderer, 255u8, 255u8, 255u8);
-			fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
-			if (not viewing) {
-				var diff_row = 0;
-				while (diff_row < 9) {
-					var diff_col = 0;
-					while (diff_col < 9) {
-						let diff = cell_difficulty.board[diff_row][diff_col];
-						if (get_cell(diff_row, diff_col) == 0 and diff >= 0.0) {
-							set_gradient_color(renderer, diff);
-							fill_rect(renderer, ORIGIN + diff_col * CELL, ORIGIN + diff_row * CELL, CELL, CELL);
-						}
-						diff_col += 1;
-					}
-					diff_row += 1;
-				}
-			}
-			set_color(renderer, 190u8, 215u8, 255u8);
-			fill_rect(renderer, ORIGIN + selected_col * CELL, ORIGIN + selected_row * CELL, CELL, CELL);
-
-			# Grid lines: thin between cells, thick around boxes.
-			var line = 0;
-			while (line <= 9) {
-				let offset = ORIGIN + line * CELL;
-				if (line % 3 == 0) {
-					set_color(renderer, 30u8, 30u8, 30u8);
-					fill_rect(renderer, offset - 1, ORIGIN - 1, 3, BOARD + 3);
-					fill_rect(renderer, ORIGIN - 1, offset - 1, BOARD + 3, 3);
-				} else {
-					set_color(renderer, 180u8, 180u8, 180u8);
-					fill_rect(renderer, offset, ORIGIN, 1, BOARD);
-					fill_rect(renderer, ORIGIN, offset, BOARD, 1);
-				}
-				line = line + 1;
-			}
-
-			# Digits.
-			var row = 0;
-			while (row < 9) {
-				var col = 0;
-				while (col < 9) {
-					let v = get_cell(row, col);
-					if (v != 0) {
-						let cx = ORIGIN + col * CELL + CELL / 2;
-						let cy = ORIGIN + row * CELL + CELL / 2;
-						draw_text(renderer, digits[v], cx, cy, true);
-					}
-					col = col + 1;
-				}
-				row = row + 1;
-			}
-
-			draw_text(renderer, help, ORIGIN, ORIGIN + BOARD + 20, false);
-			if (viewing) {
-				view.draw(renderer, small, &solve_result, step_idx);
-			} else {
-				# Warning banners, where the step viewer would otherwise show its move list.
-				let panel_x = ORIGIN + BOARD + 30;
-				var panel_y = ORIGIN + 8;
-				if (board_unsolvable) {
-					set_color(renderer, 255u8, 150u8, 150u8);
-					fill_rect(renderer, panel_x, panel_y, unsolvable_warning.w + 20, unsolvable_warning.h + 16);
-					draw_text(renderer, unsolvable_warning, panel_x + 10, panel_y + unsolvable_warning.h / 2 + 8, false);
-					panel_y += unsolvable_warning.h + 16 + 10;
-				} else {
-					if (board_has_undetermined) {
-						set_color(renderer, 255u8, 225u8, 120u8);
-						fill_rect(renderer, panel_x, panel_y, undetermined_warning.w + 20, undetermined_warning.h + 16);
-						draw_text(renderer, undetermined_warning, panel_x + 10, panel_y + undetermined_warning.h / 2 + 8, false);
-						panel_y += undetermined_warning.h + 16 + 10;
-					}
-				}
-			}
-		}
-
-		SDL_RenderPresent(renderer);
+	while (app.running) {
+		while (SDL_PollEvent(&event as cptr SDL_Event) != 0) { app.handle(&event as cptr SDL_Event); }
+		app.draw();
 		SDL_Delay(16u32);
 	}
 
-	TTF_CloseFont(font);
-	TTF_CloseFont(small);
-	TTF_CloseFont(cand_font);
-	SDL_DestroyRenderer(renderer);
+	fonts.close();
+	SDL_DestroyRenderer(canvas.renderer);
 	SDL_DestroyWindow(window);
 	TTF_Quit();
 	SDL_Quit();
-	return 0i64;
+	return 0;
 }

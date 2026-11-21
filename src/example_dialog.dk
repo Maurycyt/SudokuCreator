@@ -1,0 +1,33 @@
+import core.containers.*;
+import sdl2.*;
+import SudokuCreator.graphics.*;
+import SudokuCreator.board_view.*;
+import SudokuCreator.examples.ExampleBoard;
+
+# Lists the example boards over the board area, one per key 1-9.
+class ExampleDialog {
+	title: Text;
+	lines: Text[9];
+
+	global fun create(canvas: Canvas, large: cptr TTF_Font, medium: cptr TTF_Font, examples: ref List[ExampleBoard]) -> ExampleDialog = {
+		var v: ExampleDialog;
+		v.title = canvas.make_text(large, "Load example", INK);
+		var i = 0;
+		while (i < 9) {
+			let name = if i < examples.length() then examples.at(i).name else "(empty)";
+			v.lines[i] = canvas.make_text(medium, f"{i + 1}: {name}", TEXT, (BOARD - 40) as u32);
+			i += 1;
+		}
+		return v;
+	}
+
+	fun draw(canvas: Canvas) = {
+		draw_board_background(canvas);
+		canvas.text(title, ORIGIN + 20, ORIGIN + 30);
+		var y = ORIGIN + 70;
+		for (line in lines) {
+			canvas.text(line, ORIGIN + 20, y);
+			y += line.h + 10;
+		}
+	}
+}

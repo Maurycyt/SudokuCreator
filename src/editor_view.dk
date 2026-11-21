@@ -1,0 +1,61 @@
+import sdl2.*;
+import SudokuCreator.graphics.*;
+import SudokuCreator.board_view.*;
+import SudokuCreator.creator.Creator;
+import SudokuCreator.sudoku_solver.units.*;
+
+# Heatmap of how hard a cell is to fill in: blue at difficulty 1 (the easiest), then green at 3,
+# yellow at 5 and red from 7 on.
+fun difficulty_color(d: f64) -> Color = {
+	let stops = [BLUE, GREEN, YELLOW, RED];
+	let t = (d - 1.0) / 2.0;
+	if (t <= 0.0) { return stops[0]; }
+	if (t >= 3.0) { return stops[3]; }
+	let i = t as i64;
+	return lerp(stops[i], stops[i + 1], t - (i as f64));
+}
+
+# The board editor, with the heatmap on empty cells the strategies can fill in.
+class EditorView {
+	digits: Text[10];
+	help: Text;
+	unsolvable: Text;
+	undetermined: Text;
+
+	global fun create(canvas: Canvas, large: cptr TTF_Font, medium: cptr TTF_Font) -> EditorView = {
+		var v: EditorView;
+		v.digits = canvas.make_digits(large, ENTERED);
+		v.help = canvas.make_text(medium, "Click a cell and type 1-9 · Space: solve · L: example", HINT);
+		v.unsolvable = canvas.make_text(medium, "This sudoku has no solution.", TEXT, 260u32);
+		v.undetermined = canvas.make_text(medium, "Some cells can't be determined yet.", TEXT, 260u32);
+		return v;
+	}
+
+	fun draw(canvas: Canvas, creator: ref Creator, selected: CellCoord) = {
+		draw_board_background(canvas);
+		for (c in CELLS) {
+			if (creator.get(c) == 0 and creator.difficulty.placeable(c)) {
+				fill_cell(canvas, c, difficulty_color(creator.difficulty.at(c)));
+			}
+		}
+		fill_cell(canvas, selected, SELECTION);
+		draw_grid(canvas);
+		for (c in CELLS) {
+			let d = creator.get(c);
+			if (d != 0) { draw_in_cell(canvas, digits[d], c); }
+		}
+		canvas.text(help, ORIGIN, CAPTION_Y);
+
+		if (creator.unsolvable) {
+			draw_warning(canvas, unsolvable, rgb(255, 150, 150));
+		} else if (creator.undetermined) {
+			draw_warning(canvas, undetermined, rgb(255, 225, 120));
+		}
+	}
+}
+
+fun draw_warning(canvas: Canvas, t: Text, color: Color) = {
+	let y = ORIGIN + 8;
+	canvas.fill(color, PANEL_X, y, t.w + 20, t.h + 16);
+	canvas.text(t, PANEL_X + 10, y + 8 + t.h / 2);
+}

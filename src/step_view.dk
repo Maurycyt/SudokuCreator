@@ -1,238 +1,216 @@
-import core.builtins.*;
 import core.containers.*;
-import core.optional.*;
 import sdl2.*;
-import SudokuCreator.*;
-import src.sudoku_solver.units.*;
-import src.sudoku_solver.solver_state.SolverState;
-import src.sudoku_solver.explanation.*;
-import src.sudoku_solver.strategies.*;
-import src.sudoku_solver.SolveResult;
-import src.multiset.*;
+import SudokuCreator.graphics.*;
+import SudokuCreator.board_view.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.explanation.*;
+import SudokuCreator.sudoku_solver.strategies.*;
+import SudokuCreator.sudoku_solver.SolveResult;
+import SudokuCreator.sudoku_solver.difficulty.remaining_difficulty;
 
-# Solver step viewer (see DESIGN.md, chapter 13): draws the state BEFORE the move, plus the
-# coloring and caption for that step.
-# The only place that turns roles into colors. Strategies know nothing about SDL.
+# Browses the solver's steps: each is drawn on the board as it was before its move.
 
-fun set_role_color(renderer: cptr SDL_Renderer, role: i64) = {
-	if (role == Role.Unit) { set_color(renderer, 255u8, 244u8, 200u8); }        # light yellow
-	if (role == Role.Excluded) { set_color(renderer, 215u8, 230u8, 255u8); }    # light blue
-	if (role == Role.Excluder) { set_color(renderer, 125u8, 170u8, 250u8); }    # strong blue
-	if (role == Role.Pattern) { set_color(renderer, 200u8, 170u8, 235u8); }     # lavender
-	if (role == Role.Target) { set_color(renderer, 255u8, 210u8, 150u8); }      # orange
-	if (role == Role.Eliminated) { set_color(renderer, 255u8, 130u8, 130u8); }  # red
-	if (role == Role.Placed) { set_color(renderer, 150u8, 235u8, 160u8); }      # light green
+# Indexed by Role.
+let ROLE_COLORS = [
+	rgb(255, 244, 200),  # Unit
+	rgb(215, 230, 255),  # Excluded
+	rgb(125, 170, 250),  # Excluder
+	rgb(200, 170, 235),  # Pattern
+	rgb(255, 210, 150),  # Target
+	rgb(255, 130, 130),  # Eliminated
+	rgb(150, 235, 160),  # Placed
+];
+
+fun draw_mark(canvas: Canvas, m: UnitMark) = {
+	for (c in UNITS[m.unit].cells) { fill_cell(canvas, c, ROLE_COLORS[m.role]); }
 }
 
-fun lerp_u8(a: u8, b: u8, t: f64) -> u8 = ((a as f64) + t * ((b as f64) - (a as f64))) as u8;
+fun draw_mark(canvas: Canvas, m: CellMark) = { fill_cell(canvas, m.cell, ROLE_COLORS[m.role]); }
 
-# The editor's live view: a cell that can currently be placed is tinted on a gradient from
-# blue (difficulty 1, as easy as it gets) through green (3) and yellow (5) to red (7 and up).
-fun set_gradient_color(renderer: cptr SDL_Renderer, d: f64) = {
-	if (d <= 1.0) {
-		set_color(renderer, 125u8, 170u8, 250u8);           # blue
+fun draw_mark(canvas: Canvas, m: CandMark) = {
+	canvas.fill(ROLE_COLORS[m.role], cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
+}
+
+# From the center of `from` to the near edge of `to`. The cells share a row or a column.
+fun draw_mark(canvas: Canvas, m: LineMark) = {
+	let x = cell_x(m.from) + CELL / 2;
+	let y = cell_y(m.from) + CELL / 2;
+	if (m.from.col == m.to.col) {
+		canvas.thick_line(ROLE_COLORS[m.role], x, y, x, if m.to.row > m.from.row then cell_y(m.to) else cell_y(m.to) + CELL);
 	} else {
-		if (d >= 7.0) {
-			set_color(renderer, 255u8, 130u8, 130u8);       # red
-		} else {
-			if (d <= 3.0) {
-				let t = (d - 1.0) / 2.0;
-				set_color(renderer, lerp_u8(125u8, 150u8, t), lerp_u8(170u8, 235u8, t), lerp_u8(250u8, 160u8, t));
-			} else {
-				if (d <= 5.0) {
-					let t = (d - 3.0) / 2.0;
-					set_color(renderer, lerp_u8(150u8, 255u8, t), lerp_u8(235u8, 210u8, t), lerp_u8(160u8, 90u8, t));
-				} else {
-					let t = (d - 5.0) / 2.0;
-					set_color(renderer, lerp_u8(255u8, 255u8, t), lerp_u8(210u8, 130u8, t), lerp_u8(90u8, 130u8, t));
-				}
-			}
-		}
+		canvas.thick_line(ROLE_COLORS[m.role], x, y, if m.to.col > m.from.col then cell_x(m.to) else cell_x(m.to) + CELL, y);
 	}
 }
 
-fun cell_x(c: CellCoord) -> i32 = ORIGIN + c.col * CELL;
-fun cell_y(c: CellCoord) -> i32 = ORIGIN + c.row * CELL;
-# Center of the small candidate digit d (3x3 mini-grid: 1 top-left, 9 bottom-right).
-fun cand_x(c: CellCoord, d: i64) -> i32 = cell_x(c) + (((d - 1) % 3) as i32) * (CELL / 3) + CELL / 6;
-fun cand_y(c: CellCoord, d: i64) -> i32 = cell_y(c) + (((d - 1) / 3) as i32) * (CELL / 3) + CELL / 6;
-
-# Whether the step places a digit in cell c (if so, candidates are not drawn there).
-fun is_placed(f: ref Step, c: CellCoord) -> bool = {
+# Draws only the marks of type M, so that each kind can be its own layer.
+template(M: type)
+fun draw_marks(canvas: Canvas, step: ref Step) = {
 	var i = 0;
-	while (i < f.marks.length()) {
-		let hit = match (f.marks.at(i)) {
-			case m: CellMark = same_cell(m.cell, c) and m.role == Role.Placed;
-			case _ = false;
+	while (i < step.marks.length()) {
+		match (step.marks.at(i)) {
+			case m: M = draw_mark(canvas, m);
+			case _ = ();
 		};
-		if (hit) { return true; }
+		i += 1;
+	}
+}
+
+fun places_in(step: ref Step, c: CellCoord) -> bool = {
+	var i = 0;
+	while (i < step.placements.length()) {
+		if (step.placements.at(i).cell == c) { return true; }
 		i += 1;
 	}
 	return false;
 }
 
-# The move that step step_idx belongs to.
+# The index of the move that step `step_idx` belongs to.
 fun move_of(result: ref SolveResult, step_idx: i64) -> i64 = {
-	var m: i64 = 0;
+	var m = 0;
 	while (m + 1 < result.move_start.length() and result.move_start.at(m + 1) <= step_idx) { m += 1; }
 	return m;
 }
 
-# Snaps a difficulty back onto the 0.1 grid, so repeated +0.1 merges below don't drift off it.
-fun round_tenth(x: f64) -> f64 = ((x * 10.0 + 0.5) as i64) as f64 / 10.0;
-
-# The hardest strategy still needed, once equally-hard remaining steps have been combined:
-# collect step_idx and the steps after it into a multiset of their difficulties, then as long as
-# two steps share a difficulty X, combine them into one step of difficulty X + 0.1 (so several
-# easy steps are a little harder than just one, and the total gently decreases while solving).
-# The answer is the hardest difficulty left once no two remaining steps are tied.
-fun remaining_difficulty(result: ref SolveResult, step_idx: i64) -> f64 = {
-	var ms: Multiset[f64];
-	var i = step_idx;
-	while (i < result.steps.length()) {
-		var v = round_tenth(result.steps.at(i).difficulty);
-		ms.add(v);
-		while (ms.count(v) >= 2) {
-			ms.remove(v);
-			ms.remove(v);
-			v = round_tenth(v + 0.1);
-			ms.add(v);
-		}
-		i += 1;
-	}
-	return optional_primitives.by_value.valueOr[f64](ms.max(), 0.0);
-}
-
-# Drawing of individual marks (called from the match in StepView.draw).
-fun draw_unit_mark(renderer: cptr SDL_Renderer, m: UnitMark) = {
-	set_role_color(renderer, m.role);
-	var k = 0;
-	while (k < 9) { let c = unit_cell(m.unit, k); fill_rect(renderer, cell_x(c), cell_y(c), CELL, CELL); k += 1; }
-}
-fun draw_cell_mark(renderer: cptr SDL_Renderer, m: CellMark) = {
-	set_role_color(renderer, m.role);
-	fill_rect(renderer, cell_x(m.cell), cell_y(m.cell), CELL, CELL);
-}
-fun draw_cand_mark(renderer: cptr SDL_Renderer, m: CandMark) = {
-	set_role_color(renderer, m.role);
-	fill_rect(renderer, cand_x(m.cell, m.digit) - 9, cand_y(m.cell, m.digit) - 9, 18, 18);
-}
-fun draw_strike(renderer: cptr SDL_Renderer, m: CandMark) = {
-	if (m.role == Role.Eliminated) {
-		set_color(renderer, 200u8, 0u8, 0u8);
-		thick_line(renderer, cand_x(m.cell, m.digit) - 8, cand_y(m.cell, m.digit) + 8, cand_x(m.cell, m.digit) + 8, cand_y(m.cell, m.digit) - 8);
-	}
-}
-# A line from the center of `from` to the near edge of `to` (so it stops short of `to`'s cell),
-# passing through every cell in between. `from` and `to` must share a row or a column.
-fun draw_line_mark(renderer: cptr SDL_Renderer, m: LineMark) = {
-	set_role_color(renderer, m.role);
-	if (m.from.col == m.to.col) {
-		let x = cell_x(m.from) + CELL / 2;
-		let y1 = cell_y(m.from) + CELL / 2;
-		let y2 = if m.to.row > m.from.row then cell_y(m.to) else cell_y(m.to) + CELL;
-		thick_line(renderer, x, y1, x, y2);
-	} else {
-		let y = cell_y(m.from) + CELL / 2;
-		let x1 = cell_x(m.from) + CELL / 2;
-		let x2 = if m.to.col > m.from.col then cell_x(m.to) else cell_x(m.to) + CELL;
-		thick_line(renderer, x1, y, x2, y);
-	}
-}
-
-# A thick line = three parallel thin ones.
-fun thick_line(renderer: cptr SDL_Renderer, x1: i32, y1: i32, x2: i32, y2: i32) = {
-	var o = 0 - 1;
-	while (o <= 1) {
-		let a = SDL_RenderDrawLine(renderer, x1 + o, y1, x2 + o, y2);
-		let b = SDL_RenderDrawLine(renderer, x1, y1 + o, x2, y2 + o);
-		o += 1;
-	}
-}
-
-# Like make_text, but with a String and wrapping at `wrap` pixels.
-fun make_wrapped_text(renderer: cptr SDL_Renderer, font: cptr TTF_Font, s: ref String, wrap: u32) -> Text = {
-	var z = copy s;
-	z.append('\0');
-	var color: SDL_Color;
-	color.r = 40u8;
-	color.g = 40u8;
-	color.b = 40u8;
-	color.a = 255u8;
-	let surface = dk_TTF_RenderUTF8_Blended_Wrapped(font, cstr(z.asSlice()), &color as cptr SDL_Color, wrap);
-	var result: Text;
-	result.w = surface[0].w;
-	result.h = surface[0].h;
-	result.tex = SDL_CreateTextureFromSurface(renderer, surface);
-	SDL_FreeSurface(surface);
-	return result;
-}
-
 class StepView {
-	given: Text[10];    # digits from the puzzle
-	solved: Text[10];   # entered by the solver in earlier steps
-	placed: Text[10];   # entered in the current step
-	small: Text[10];    # candidates
-	difficulty: Text;   # remaining difficulty indicator
-	header: Text;
-	body: Text;
-	shown: i64 = 0 - 1; # which step the header/body are currently built for
+	caption_font: cptr TTF_Font;
 	panel_font: cptr TTF_Font;
-	move_lines: List[Text];  # "12. Hidden Single" for each move, built on first draw
+	given: Text[10];
+	solved: Text[10];       # entered by the solver in earlier moves
+	placed: Text[10];       # entered by the current step
+	candidates: Text[10];
 	title: Text;
-	legend: Text[7];         # descriptions of the role colors
-	no_candidates_legend: Text;
+	legend: Text[7];        # indexed by Role
+	contradiction_legend: Text;
 	keys_help: Text;
 
-	global fun create(renderer: cptr SDL_Renderer, big: cptr TTF_Font, small_font: cptr TTF_Font) -> StepView = {
+	# Rendered for the current solve.
+	move_lines: List[Text];
+	# Rendered for the current step.
+	shown: i64 = -1;
+	difficulty: Text;
+	header: Text;
+	body: Text;
+
+	global fun create(canvas: Canvas, large: cptr TTF_Font, medium: cptr TTF_Font, small: cptr TTF_Font) -> StepView = {
 		var v: StepView;
-		var d = 1;
-		while (d <= 9) {
-			v.given[d] = digit_text(renderer, big, d, 20u8, 20u8, 20u8);
-			v.solved[d] = digit_text(renderer, big, d, 40u8, 90u8, 200u8);
-			v.placed[d] = digit_text(renderer, big, d, 0u8, 140u8, 40u8);
-			v.small[d] = digit_text(renderer, small_font, d, 110u8, 110u8, 110u8);
-			d += 1;
+		v.caption_font = medium;
+		v.panel_font = small;
+		v.given = canvas.make_digits(large, INK);
+		v.solved = canvas.make_digits(large, ENTERED);
+		v.placed = canvas.make_digits(large, rgb(0, 140, 40));
+		v.candidates = canvas.make_digits(small, rgb(110, 110, 110));
+		v.title = canvas.make_text(small, "Solver moves", rgb(30, 30, 30));
+		let labels = [
+			"the unit being searched",
+			"area excluded by a digit",
+			"the digit that excludes",
+			"candidate forming the pattern",
+			"target cell",
+			"candidate being crossed out",
+			"digit being entered",
+		];
+		var role = 0;
+		for (label in labels) {
+			v.legend[role] = canvas.make_text(small, label, rgb(60, 60, 60));
+			role += 1;
 		}
-		v.panel_font = small_font;
-		v.title = make_text(renderer, small_font, cstr("Solver moves\0"), 30u8, 30u8, 30u8);
-		v.legend[Role.Unit] = make_text(renderer, small_font, cstr("the unit being searched\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Excluded] = make_text(renderer, small_font, cstr("area excluded by a digit\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Excluder] = make_text(renderer, small_font, cstr("the digit that excludes\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Pattern] = make_text(renderer, small_font, cstr("candidate forming the pattern\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Target] = make_text(renderer, small_font, cstr("target cell\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Eliminated] = make_text(renderer, small_font, cstr("candidate being crossed out\0"), 60u8, 60u8, 60u8);
-		v.legend[Role.Placed] = make_text(renderer, small_font, cstr("digit being entered\0"), 60u8, 60u8, 60u8);
-		v.no_candidates_legend = make_text(renderer, small_font, cstr("cell with no candidates left (contradiction)\0"), 60u8, 60u8, 60u8);
-		v.keys_help = make_text(renderer, small_font, cstr("←/→ step   Esc editor\0"), 90u8, 90u8, 90u8);
+		v.contradiction_legend = canvas.make_text(small, "cell with no candidates left (contradiction)", rgb(60, 60, 60));
+		v.keys_help = canvas.make_text(small, "←/→ step   Esc editor", HINT);
 		return v;
 	}
 
-	# Call after every new solve: invalidates textures built for the previous one.
+	# Call before showing a new solve.
 	fun reset() = {
 		var i = 0;
-		while (i < move_lines.length()) { SDL_DestroyTexture(move_lines.at(i).tex); i += 1; }
+		while (i < move_lines.length()) {
+			move_lines.at(i).free();
+			i += 1;
+		}
 		move_lines.clear();
-		if (shown >= 0) { SDL_DestroyTexture(difficulty.tex); SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
-		shown = 0 - 1;
+		free_caption();
 	}
 
-	# Right-hand panel (see DESIGN.md, chapter 13.1): move list with the current one highlighted,
-	# legend, key hints.
-	fun draw_panel(renderer: cptr SDL_Renderer, result: ref SolveResult, step_idx: i64) = {
-		let x = ORIGIN + BOARD + 30;
-		let rows: i64 = 22;
-		if (move_lines.length() == 0) {
-			var k = 0;
-			while (k < result.move_start.length()) {
-				let line = f"{k + 1}. {result.steps.at(result.move_start.at(k)).strategy}";
-				move_lines.push(make_wrapped_text(renderer, panel_font, &line, 300u32));
-				k += 1;
+	fun free_caption() = {
+		if (shown >= 0) {
+			difficulty.free();
+			header.free();
+			body.free();
+		}
+		shown = -1;
+	}
+
+	fun draw(canvas: Canvas, result: ref SolveResult, step_idx: i64) = {
+		let step = result.steps.at(step_idx);
+		let s = result.snapshots.at(step_idx);
+
+		# Backgrounds: whole units first, then cells, then cells left without candidates.
+		draw_board_background(canvas);
+		draw_marks[UnitMark](canvas, step);
+		draw_marks[CellMark](canvas, step);
+		for (c in CELLS) {
+			if (s.value(c) == 0 and s.count(c) == 0) { fill_cell(canvas, c, RED); }
+		}
+		draw_grid(canvas);
+		draw_marks[LineMark](canvas, step);
+
+		for (c in CELLS) {
+			let d = s.value(c);
+			if (d != 0) { draw_in_cell(canvas, if s.cell(c).given then given[d] else solved[d], c); }
+		}
+		var i = 0;
+		while (i < step.placements.length()) {
+			let p = step.placements.at(i);
+			draw_in_cell(canvas, placed[p.digit], p.cell);
+			i += 1;
+		}
+
+		draw_marks[CandMark](canvas, step);
+		for (c in CELLS) {
+			if (places_in(step, c)) { continue; }
+			for (d in DIGITS) {
+				if (s.has(c, d)) { canvas.text(candidates[d], cand_x(c, d), cand_y(c, d), true); }
 			}
 		}
-		draw_text(renderer, title, x, ORIGIN + 8, false);
+		i = 0;
+		while (i < step.eliminations.length()) {
+			let e = step.eliminations.at(i);
+			let x = cand_x(e.cell, e.digit);
+			let y = cand_y(e.cell, e.digit);
+			canvas.thick_line(rgb(200, 0, 0), x - 8, y + 8, x + 8, y - 8);
+			i += 1;
+		}
 
-		# The list window scrolls so the current move is roughly centered.
+		draw_caption(canvas, result, step_idx);
+		draw_panel(canvas, result, step_idx);
+	}
+
+	fun draw_caption(canvas: Canvas, result: ref SolveResult, step_idx: i64) = {
+		if (shown != step_idx) {
+			free_caption();
+			let step = result.steps.at(step_idx);
+			difficulty = canvas.make_text(caption_font, f"Remaining difficulty: {remaining_difficulty(result, step_idx)}", TEXT, 540u32);
+			header = canvas.make_text(caption_font, f"Step {step_idx + 1}/{result.steps.length()} · move {move_of(result, step_idx) + 1}: {step.strategy}", TEXT, 540u32);
+			body = canvas.make_text(caption_font, step.text.asSlice(), TEXT, 540u32);
+			shown = step_idx;
+		}
+		canvas.text(difficulty, ORIGIN, CAPTION_Y);
+		canvas.text(header, ORIGIN, CAPTION_Y + 25);
+		canvas.text(body, ORIGIN, CAPTION_Y + 50 + body.h / 2);
+	}
+
+	# The move list, scrolled to keep the current move roughly centered, and the color legend.
+	fun draw_panel(canvas: Canvas, result: ref SolveResult, step_idx: i64) = {
+		let rows: i64 = 22;
+		if (move_lines.length() == 0) {
+			var m = 0;
+			while (m < result.move_start.length()) {
+				let strategy = result.steps.at(result.move_start.at(m)).strategy;
+				move_lines.push(canvas.make_text(panel_font, f"{m + 1}. {strategy}", TEXT, 300u32));
+				m += 1;
+			}
+		}
+		canvas.text(title, PANEL_X, ORIGIN + 8);
+
 		let current = move_of(result, step_idx);
 		var first = current - rows / 2;
 		if (first > move_lines.length() - rows) { first = move_lines.length() - rows; }
@@ -240,159 +218,24 @@ class StepView {
 		var i = first;
 		while (i < move_lines.length() and i < first + rows) {
 			let row_y = ORIGIN + 30 + ((i - first) as i32) * 20;
-			if (i == current) {
-				set_color(renderer, 190u8, 215u8, 255u8);
-				fill_rect(renderer, x - 6, row_y, 300, 20);
-			}
-			draw_text(renderer, move_lines.at(i), x, row_y + 10, false);
+			if (i == current) { canvas.fill(SELECTION, PANEL_X - 6, row_y, 300, 20); }
+			canvas.text(move_lines.at(i), PANEL_X, row_y + 10);
 			i += 1;
 		}
 
 		var y = ORIGIN + 30 + (rows as i32) * 20 + 20;
-		var r = 0;
-		while (r < 7) {
-			set_role_color(renderer, r);
-			fill_rect(renderer, x, y, 18, 18);
-			draw_text(renderer, legend[r], x + 28, y + 9, false);
+		var role = 0;
+		while (role < Role.Count) {
+			draw_legend_entry(canvas, ROLE_COLORS[role], legend[role], y);
 			y += 24;
-			r += 1;
+			role += 1;
 		}
-		set_color(renderer, 255u8, 130u8, 130u8);
-		fill_rect(renderer, x, y, 18, 18);
-		draw_text(renderer, no_candidates_legend, x + 28, y + 9, false);
-		y += 24;
-		draw_text(renderer, keys_help, x, y + 16, false);
+		draw_legend_entry(canvas, RED, contradiction_legend, y);
+		canvas.text(keys_help, PANEL_X, y + 40);
 	}
+}
 
-	fun draw(renderer: cptr SDL_Renderer, font: cptr TTF_Font, result: ref SolveResult, step_idx: i64) = {
-		let f = result.steps.at(step_idx);
-		let step = f;
-		let s = result.snapshots.at(step_idx);
-		let cells = all_cells();
-
-		if (shown != step_idx) {   # text is only re-rendered when the step changes
-			if (shown >= 0) { SDL_DestroyTexture(difficulty.tex); SDL_DestroyTexture(header.tex); SDL_DestroyTexture(body.tex); }
-			let diff = f"Remaining difficulty: {remaining_difficulty(result, step_idx)}";
-			difficulty = make_wrapped_text(renderer, font, &diff, 540u32);
-			let m = move_of(result, step_idx);
-			let h = f"Step {step_idx + 1}/{result.steps.length()} · move {m + 1}: {f.strategy}";
-			header = make_wrapped_text(renderer, font, &h, 540u32);
-			body = make_wrapped_text(renderer, font, &f.text, 540u32);
-			shown = step_idx;
-		}
-
-		# Board background, then backgrounds by role: first whole units, then cells (on top).
-		set_color(renderer, 255u8, 255u8, 255u8);
-		fill_rect(renderer, ORIGIN, ORIGIN, BOARD, BOARD);
-		var i = 0;
-		while (i < f.marks.length()) {
-			match (f.marks.at(i)) {
-				case m: UnitMark = draw_unit_mark(renderer, m);
-				case _ = ();
-			};
-			i += 1;
-		}
-		i = 0;
-		while (i < f.marks.length()) {
-			match (f.marks.at(i)) {
-				case m: CellMark = draw_cell_mark(renderer, m);
-				case _ = ();
-			};
-			i += 1;
-		}
-
-		# A cell with every candidate eliminated is a direct contradiction: mark it red, on top
-		# of whatever role mark it might also have, since this is the one thing that always needs
-		# to stand out.
-		var ci0 = 0;
-		while (ci0 < cells.length()) {
-			let c = cells.at(ci0);
-			if (s.value(c) == 0 and s.count(c) == 0) {
-				set_color(renderer, 255u8, 130u8, 130u8);
-				fill_rect(renderer, cell_x(c), cell_y(c), CELL, CELL);
-			}
-			ci0 += 1;
-		}
-
-		# Grid (same as in the editor).
-		var line = 0;
-		while (line <= 9) {
-			let offset = ORIGIN + line * CELL;
-			if (line % 3 == 0) {
-				set_color(renderer, 30u8, 30u8, 30u8);
-				fill_rect(renderer, offset - 1, ORIGIN - 1, 3, BOARD + 3);
-				fill_rect(renderer, ORIGIN - 1, offset - 1, BOARD + 3, 3);
-			} else {
-				set_color(renderer, 180u8, 180u8, 180u8);
-				fill_rect(renderer, offset, ORIGIN, 1, BOARD);
-				fill_rect(renderer, ORIGIN, offset, BOARD, 1);
-			}
-			line += 1;
-		}
-
-		# Lines connecting an excluded cell to the cell excluding it.
-		i = 0;
-		while (i < f.marks.length()) {
-			match (f.marks.at(i)) {
-				case m: LineMark = draw_line_mark(renderer, m);
-				case _ = ();
-			};
-			i += 1;
-		}
-
-		# Digits: given / previously entered / being entered now (green, via CellMark{Placed}).
-		var ci = 0;
-		while (ci < cells.length()) {
-			let c = cells.at(ci);
-			let v = s.value(c);
-			if (v != 0) {
-				let t = if s.cell(c).given then given[v] else solved[v];
-				draw_text(renderer, t, cell_x(c) + CELL / 2, cell_y(c) + CELL / 2, true);
-			}
-			ci += 1;
-		}
-		i = 0;
-		while (i < step.placements.length()) {
-			let p = step.placements.at(i);
-			if (is_placed(f, p.cell)) { draw_text(renderer, placed[p.digit], cell_x(p.cell) + CELL / 2, cell_y(p.cell) + CELL / 2, true); }
-			i += 1;
-		}
-
-		# Candidates: colored marker backgrounds, digits, strike-throughs.
-		i = 0;
-		while (i < f.marks.length()) {
-			match (f.marks.at(i)) {
-				case m: CandMark = draw_cand_mark(renderer, m);
-				case _ = ();
-			};
-			i += 1;
-		}
-		ci = 0;
-		while (ci < cells.length()) {
-			let c = cells.at(ci);
-			var d = 1;
-			while (d <= 9) {
-				if (s.has(c, d) and not is_placed(f, c)) { draw_text(renderer, small[d], cand_x(c, d), cand_y(c, d), true); }
-				d += 1;
-			}
-			ci += 1;
-		}
-		i = 0;
-		while (i < f.marks.length()) {
-			match (f.marks.at(i)) {
-				case m: CandMark = draw_strike(renderer, m);
-				case _ = ();
-			};
-			i += 1;
-		}
-
-		# Caption below the board (covers the editor's hint).
-		set_color(renderer, 245u8, 243u8, 236u8);
-		fill_rect(renderer, 0, ORIGIN + BOARD + 3, ORIGIN + BOARD + 10, HEIGHT);
-		draw_text(renderer, difficulty, ORIGIN, ORIGIN + BOARD + 20, false);
-		draw_text(renderer, header, ORIGIN, ORIGIN + BOARD + 45, false);
-		draw_text(renderer, body, ORIGIN + 0, ORIGIN + BOARD + 70 + body.h / 2, false);
-
-		draw_panel(renderer, result, step_idx);
-	}
+fun draw_legend_entry(canvas: Canvas, color: Color, label: Text, y: i32) = {
+	canvas.fill(color, PANEL_X, y, 18, 18);
+	canvas.text(label, PANEL_X + 28, y + 9);
 }

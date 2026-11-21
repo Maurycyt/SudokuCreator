@@ -1,7 +1,18 @@
-class PartialSudoku {
-	class Cell {
-		value: i64;
-	}
+import SudokuCreator.sudoku_solver.units.*;
 
-	board: Cell[9][9];
+# The digits entered by the user; 0 marks an empty cell.
+class PartialSudoku {
+	digits: i64[9][9];
+
+	fun at(c: CellCoord) -> ref i64 = &digits[c.row][c.col];
+
+	# Reads 81 characters row by row, '.' for an empty cell.
+	global fun parse(s: str) -> PartialSudoku = {
+		var puzzle: PartialSudoku;
+		for (c in CELLS) {
+			let ch = s[c.row * 9 + c.col];
+			puzzle.at(c) = if ch == '.' then 0i64 else (ch - '0') as i64;
+		}
+		return puzzle;
+	}
 }

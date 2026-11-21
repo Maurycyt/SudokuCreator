@@ -1,78 +1,56 @@
 import core.containers.*;
-import src.sudoku_solver.units.*;
-import src.sudoku_solver.solver_state.SolverState;
-import src.sudoku_solver.strategies.*;
-import src.sudoku_solver.*;
+import core.optional.*;
+import SudokuCreator.multiset.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.*;
 
-# Per-cell solvability, for the live editor view: for each currently empty cell, how hard would
-# it be to fill it in right now, given only the cells already entered. A strategy does not have
-# to touch a cell to make it solvable indirectly through others, so this just replays a full
-# solve() and remembers, for every cell a step places, which strategy's difficulty did it.
-
+# How hard each empty cell is to fill in, given the digits entered so far.
 class CellDifficulty {
-	board: f64[9][9];  # a negative value means no known strategy can currently place that cell
-}
+	board: f64[9][9];  # negative = no known strategy places the cell
 
-# solve() always retries the easiest strategy first, so moves come out in nondecreasing
-# difficulty within whatever a given move unlocks — but a single hard move can unlock further
-# easy ones. A cell placed by an easy move that only became possible after an earlier hard move
-# is itself no easier to reach, so each cell is colored by the hardest difficulty used by any
-# move up to and including the one that placed it, not just that move's own difficulty.
-fun analyze_difficulty(result: ref SolveResult) -> CellDifficulty = {
-	var cd: CellDifficulty;
-	var row = 0;
-	while (row < 9) {
-		var col = 0;
-		while (col < 9) { cd.board[row][col] = 0.0 - 1.0; col += 1; }
-		row += 1;
-	}
-
-	var hardest_so_far: f64 = 0.0 - 1.0;
-	var i = 0;
-	while (i < result.steps.length()) {
-		let st = result.steps.at(i);
-		if (st.difficulty > hardest_so_far) { hardest_so_far = st.difficulty; }
-		var k = 0;
-		while (k < st.placements.length()) {
-			let p = st.placements.at(k);
-			cd.board[p.cell.row][p.cell.col] = hardest_so_far;
-			k += 1;
-		}
-		i += 1;
-	}
-	return cd;
-}
-
-# A provable contradiction in `s`: either two cells in a unit already hold the same digit, or
-# some empty cell has no candidate left at all. Both are proof the board has no solution — but
-# the second can easily be true of `s` without being true of the raw given digits alone, since a
-# chain of otherwise-sound eliminations (singles, X-Wing, ...) can be what drove a cell's
-# candidates to zero. So this should be checked against the state a solve() leaves behind, not
-# a fresh one, or such contradictions go unnoticed.
-fun has_contradiction(s: ref SolverState) -> bool = {
-	var u = 0;
-	while (u < 27) {
-		var seen: bool[10];
-		var d = 0;
-		while (d < 10) { seen[d] = false; d += 1; }
-		var k = 0;
-		while (k < 9) {
-			let v = s.value(unit_cell(u, k));
-			if (v != 0) {
-				if (seen[v]) { return true; }
-				seen[v] = true;
+	# A cell's difficulty is the hardest strategy used up to and including the move that placed
+	# it: a hard move can unlock easy ones, which are then no easier to reach.
+	global fun of(result: ref SolveResult) -> CellDifficulty = {
+		var cd: CellDifficulty;
+		for (c in CELLS) { cd.at(c) = -1.0; }
+		var hardest: f64 = -1.0;
+		var i = 0;
+		while (i < result.steps.length()) {
+			let step = result.steps.at(i);
+			if (step.difficulty > hardest) { hardest = step.difficulty; }
+			var k = 0;
+			while (k < step.placements.length()) {
+				cd.at(step.placements.at(k).cell) = hardest;
+				k += 1;
 			}
-			k += 1;
+			i += 1;
 		}
-		u += 1;
+		return cd;
 	}
 
-	let cells = all_cells();
-	var i = 0;
-	while (i < cells.length()) {
-		let c = cells.at(i);
-		if (s.value(c) == 0 and s.count(c) == 0) { return true; }
+	fun at(c: CellCoord) -> ref f64 = &board[c.row][c.col];
+	fun placeable(c: CellCoord) -> bool = at(c) >= 0.0;
+}
+
+# Rounds to one decimal place, so repeated +0.1 does not drift.
+fun round_tenth(x: f64) -> f64 = ((x * 10.0 + 0.5) as i64) as f64 / 10.0;
+
+# The difficulty of the steps from `from` onwards: any two steps of equal difficulty X combine
+# into one of difficulty X + 0.1 until no two are tied, then the hardest remaining counts. So many
+# easy steps add up to slightly more than one, and the value gently drops while solving.
+fun remaining_difficulty(result: ref SolveResult, from: i64) -> f64 = {
+	var ms: Multiset[f64];
+	var i = from;
+	while (i < result.steps.length()) {
+		var v = round_tenth(result.steps.at(i).difficulty);
+		ms.add(v);
+		while (ms.count(v) >= 2) {
+			ms.remove(v);
+			ms.remove(v);
+			v = round_tenth(v + 0.1);
+			ms.add(v);
+		}
 		i += 1;
 	}
-	return false;
+	return ms.max().valueOr(0.0);
 }

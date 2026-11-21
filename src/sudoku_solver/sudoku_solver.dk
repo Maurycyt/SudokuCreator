@@ -1,11 +1,11 @@
 import core.containers.*;
-import src.partial_sudoku.PartialSudoku;
+import SudokuCreator.partial_sudoku.PartialSudoku;
 import solver_state.SolverState;
 import strategies.*;
 import strategies.singles.*;
 import strategies.x_wing.*;
 
-# Registry, easiest first. A new strategy = one line here.
+# Easiest first.
 fun all_strategies() -> List[Strategy] = {
 	var s: List[Strategy];
 	s.push(Strategy("Full House", 1.0, find_full_house));
@@ -15,53 +15,64 @@ fun all_strategies() -> List[Strategy] = {
 	return s;
 }
 
-# All steps to show, in order. A move = one strategy application = several steps.
+# The steps of all moves, in order. A move is one application of a strategy.
 class SolveResult {
 	steps: List[Step];
-	snapshots: List[SolverState];  # snapshots[i] = the state we draw steps[i] on (before the move)
+	snapshots: List[SolverState];  # the state each step is shown on, i.e. before its move
 	move_start: List[i64];         # index of the first step of each move
-	stuck: bool;                   # no strategy found anything
+	stuck: bool;                   # no strategy applies to the final state
 }
 
 class SudokuSolver {
 	state: SolverState;
 
-	global fun create(partial: PartialSudoku) =
-		SudokuSolver(SolverState.create(partial));
+	global fun create(puzzle: ref PartialSudoku) = SudokuSolver(SolverState.create(puzzle));
 
-	fun apply(step: ref Step) = {
-		var k = 0;
-		while (k < step.placements.length()) { let p = step.placements.at(k); state.place(p.cell, p.digit); k += 1; }
-		k = 0;
-		while (k < step.eliminations.length()) { let e = step.eliminations.at(k); state.eliminate(e.cell, e.digit); k += 1; }
-	}
-
-	# After every move, go back to the easiest strategy (see DESIGN.md, chapter 7).
+	# After every move, starts over from the easiest strategy, so each move is as simple as possible.
 	fun solve() -> SolveResult = {
 		let strategies = all_strategies();
 		var r: SolveResult;
-		while (not state.solved() and not r.stuck) {
-			r.stuck = true;
+		while (not state.solved()) {
 			var i = 0;
-			while (i < strategies.length() and r.stuck) {
-				var steps = strategies.at(i).find(&state);
-				if (steps.length() > 0) {
-					r.stuck = false;
-					r.move_start.push(r.steps.length());
-					var k = 0;
-					while (k < steps.length()) {
-						var st = copy steps.at(k);
-						st.strategy = strategies.at(i).name.toString();
-						st.difficulty = strategies.at(i).difficulty;
-						r.snapshots.push(state);
-						r.steps.push(move st);
-						k += 1;
-					}
-					apply(steps.at(steps.length() - 1));   # effects come from the last step
-				}
-				i += 1;
+			while (i < strategies.length() and not try_strategy(strategies.at(i), &r)) { i += 1; }
+			if (i == strategies.length()) {
+				r.stuck = true;
+				break;
 			}
 		}
 		return r;
+	}
+
+	fun try_strategy(strategy: ref Strategy, r: ref SolveResult) -> bool = {
+		var sb: StepsBuilder;
+		if (not strategy.find(&state, &sb)) { return false; }
+
+		r.move_start.push(r.steps.length());
+		var k = 0;
+		while (k < sb.steps.length()) {
+			var step = copy sb.steps.at(k);
+			step.strategy = strategy.name;
+			step.difficulty = strategy.difficulty;
+			r.snapshots.push(state);
+			r.steps.push(move step);
+			k += 1;
+		}
+		apply(sb.cur());
+		return true;
+	}
+
+	fun apply(step: ref Step) = {
+		var k = 0;
+		while (k < step.placements.length()) {
+			let p = step.placements.at(k);
+			state.place(p.cell, p.digit);
+			k += 1;
+		}
+		k = 0;
+		while (k < step.eliminations.length()) {
+			let e = step.eliminations.at(k);
+			state.eliminate(e.cell, e.digit);
+			k += 1;
+		}
 	}
 }

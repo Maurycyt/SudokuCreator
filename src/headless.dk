@@ -1,85 +1,134 @@
 import core.builtins.*;
 import core.containers.*;
-import SudokuCreator.creator.*;
-import SudokuCreator.step_view.*;
+import core.optional.*;
+import SudokuCreator.creator.Creator;
+import SudokuCreator.examples.*;
+import SudokuCreator.multiset.*;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.SolveResult;
+import SudokuCreator.sudoku_solver.difficulty.*;
 
-# A headless diagnostic mode: no window, no SDL, just the solver/analysis pipeline exercised
-# against the example library and dumped to stdout. Set SUDOKU_HEADLESS (to anything) to use it,
-# e.g. `SUDOKU_HEADLESS=1 duck run`. Exits 0 if every example checks out, 1 otherwise, so it also
-# doubles as a quick regression check after changing a strategy.
+# Diagnostics without a window, selected by the SUDOKU_HEADLESS environment variable:
+#   SUDOKU_HEADLESS=<81-character board>  prints how the strategies solve the board
+#                                         (format: see PartialSudoku.parse);
+#   SUDOKU_HEADLESS=<anything else>       runs the self-tests; exit code 1 on failure.
 
 extern("C") {
 	fundecl getenv(name: cptr char) -> cptr u8;
 }
 
-fun headless_requested() -> bool =
-	getenv(builtins.ptr_from_slice[char]("SUDOKU_HEADLESS\0") as cptr char) as u64 != 0u64;
-
-# One row of the board: the given digit, '.' for an empty cell the strategies can place, or '?'
-# for one they can't (whatever the difficulty gradient would leave white in the editor).
-fun board_row(row: i64) -> String = {
-	var line: String;
-	var col = 0;
-	while (col < 9) {
-		let v = get_cell(row, col);
-		if (v != 0) {
-			line.append((48 + v) as char);
-		} else {
-			if (cell_difficulty.board[row][col] < 0.0) { line.append('?'); } else { line.append('.'); }
-		}
-		col += 1;
-	}
-	return line;
-}
-
-fun check_example(ex: ExampleBoard) -> bool = {
-	load_board(ex.board);
-	let had_steps = try_solve();
-
-	var max_used: f64 = 0.0 - 1.0;
+fun headless_arg() -> ?String = {
+	let p = getenv(builtins.ptr_from_slice[char]("SUDOKU_HEADLESS\0") as cptr char);
+	if (p as u64 == 0u64) { return none; }
+	var s: String;
 	var i = 0;
-	while (i < solve_result.steps.length()) {
-		let d = solve_result.steps.at(i).difficulty;
-		if (d > max_used) { max_used = d; }
+	while (p[i] != 0u8) {
+		s.append(p[i] as char);
 		i += 1;
 	}
+	return s;
+}
 
-	print(f"== {ex.name} ==");
-	print('\n');
-	print(f"stuck={solve_result.stuck} steps={solve_result.steps.length()} board_unsolvable={board_unsolvable} board_has_undetermined={board_has_undetermined}");
-	print('\n');
-	print(f"hardest strategy used={max_used} (expected at most {ex.max_difficulty})");
-	print('\n');
-	print(f"remaining difficulty at the start={remaining_difficulty(&solve_result, 0)}");
-	print('\n');
-	var row = 0;
-	while (row < 9) {
-		print(board_row(row).asSlice());
-		print('\n');
-		row += 1;
+fun run_headless(arg: ref String) -> i64 = {
+	if (arg.length() == 81) {
+		explain(arg.asSlice());
+		return 0;
 	}
+	return if self_test() then 0i64 else 1i64;
+}
 
-	var ok = true;
-	if (solve_result.stuck) { print("FAIL: did not fully solve\n"); ok = false; }
-	if (max_used > ex.max_difficulty) { print("FAIL: needed a harder strategy than expected\n"); ok = false; }
-	print('\n');
+fun explain(board: str) = {
+	var creator: Creator;
+	creator.load(board);
+	print_summary(&creator);
+	let r = &creator.result;
+	var m = 0;
+	var i = 0;
+	while (i < r.steps.length()) {
+		let step = r.steps.at(i);
+		if (m < r.move_start.length() and r.move_start.at(m) == i) {
+			m += 1;
+			print(f"\nmove {m}: {step.strategy}\n");
+		}
+		print(f"  {step.text}\n");
+		i += 1;
+	}
+}
+
+fun hardest_strategy(r: ref SolveResult) -> f64 = {
+	var hardest: f64 = 0.0;
+	var i = 0;
+	while (i < r.steps.length()) {
+		if (r.steps.at(i).difficulty > hardest) { hardest = r.steps.at(i).difficulty; }
+		i += 1;
+	}
+	return hardest;
+}
+
+# The board shows entered digits, '.' for cells the strategies place and '?' for the rest.
+fun print_summary(creator: ref Creator) = {
+	let r = &creator.result;
+	print(f"steps={r.steps.length()} moves={r.move_start.length()} stuck={r.stuck} unsolvable={creator.unsolvable} undetermined={creator.undetermined}\n");
+	print(f"hardest strategy={hardest_strategy(r)} remaining difficulty={remaining_difficulty(r, 0)}\n");
+	for (c in CELLS) {
+		let d = creator.get(c);
+		if (d != 0) { print('0' + (d as u8)); }
+		else { print(if creator.difficulty.placeable(c) then '.' else '?'); }
+		if (c.col == 8) { print('\n'); }
+	}
+}
+
+fun check(ok: bool, label: str) -> bool = {
+	if (not ok) { print(f"FAIL: {label}\n"); }
 	return ok;
 }
 
-fun run_headless() -> i64 = {
-	var all_ok = true;
+fun check_example(ex: ref ExampleBoard) -> bool = {
+	var creator: Creator;
+	creator.load(ex.board);
+	print(f"== {ex.name} (expected difficulty at most {ex.max_difficulty}) ==\n");
+	print_summary(&creator);
+	let solved = check(not creator.result.stuck, "not solved");
+	let easy = check(hardest_strategy(&creator.result) <= ex.max_difficulty, "needed a harder strategy than expected");
+	print('\n');
+	return solved and easy;
+}
+
+fun check_multiset() -> bool = {
+	let values = [5, 3, 8, 1, 4, 7, 9, 2, 6, 3, 5, 5];
+	var ms: Multiset[i64];
+	for (v in values) { ms.add(v); }
+	var ok = check(ms.count(3) == 2 and ms.count(5) == 3 and ms.count(10) == 0, "multiset count");
+	ok = check(ms.min().valueOr(-1) == 1 and ms.max().valueOr(-1) == 9, "multiset min/max") and ok;
+	for (v in [5, 5, 5, 9]) { ms.remove(v); }
+	ok = check(ms.count(5) == 0 and ms.max().valueOr(-1) == 8, "multiset remove") and ok;
+	for (v in values) { ms.remove(v); }
+	ok = check(ms.min().isEmpty(), "multiset empty") and ok;
+
+	# Enough keys to rotate in both directions.
+	var big: Multiset[i64];
+	var k = 0;
+	while (k < 200) {
+		big.add((k * 37) % 101);
+		k += 1;
+	}
+	var all_present = true;
+	k = 0;
+	while (k < 101) {
+		if (big.count(k) == 0) { all_present = false; }
+		k += 1;
+	}
+	return check(all_present and big.min().valueOr(-1) == 0 and big.max().valueOr(-1) == 100, "multiset stress") and ok;
+}
+
+fun self_test() -> bool = {
+	var ok = check_multiset();
 	let examples = example_boards();
 	var i = 0;
 	while (i < examples.length()) {
-		if (not check_example(examples.at(i))) { all_ok = false; }
+		ok = check_example(examples.at(i)) and ok;
 		i += 1;
 	}
-
-	load_example();
-	if (all_ok) {
-		print("ALL EXAMPLES OK\n");
-		return 0i64;
-	}
-	print("SOME EXAMPLES FAILED\n");
-	return 1i64;
+	print(if ok then "ALL OK\n" else "SOME CHECKS FAILED\n");
+	return ok;
 }
