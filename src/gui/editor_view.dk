@@ -39,7 +39,7 @@ class EditorView {
 	global fun create(canvas: Canvas, large: cptr TTF_Font, medium: cptr TTF_Font, small: cptr TTF_Font) -> EditorView = {
 		var v: EditorView;
 		v.digits = canvas.make_digits(large, ENTERED);
-		v.help = canvas.make_text(medium, "Click a cell and type 1-9 · Space: solve · L: example", HINT);
+		v.help = canvas.make_text(medium, "Click a cell and type 1-9 · Space: solve · L: Load", HINT);
 		v.unsolvable = canvas.make_text(medium, "This sudoku has no solution.", TEXT, 260u32);
 		v.undetermined = canvas.make_text(medium, "Some cells can't be determined yet.", TEXT, 260u32);
 		v.legend_title = canvas.make_text(small, "Hardest strategy needed to fill a cell:", rgb(30, 30, 30), 300u32);
