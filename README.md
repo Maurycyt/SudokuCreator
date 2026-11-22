@@ -1,6 +1,6 @@
 <div align="center">
 
-# Sudoku Creator
+# Sud<img src="docs/logo/o.svg" alt="o" height="22">ku Creat<img src="docs/logo/o.svg" alt="o" height="22">r
 
 **Build sudoku puzzles that a human can solve, and see exactly how.**
 
