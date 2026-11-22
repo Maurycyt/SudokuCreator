@@ -1,6 +1,6 @@
 <div align="center">
 
-# Sud<img src="docs/logo/o.svg" alt="o" height="18">ku Creat<img src="docs/logo/o.svg" alt="o" height="18">r
+# Sud<picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo/o.svg"><img src="docs/logo/o_light.svg" alt="o" height="18"></picture>ku Creat<picture><source media="(prefers-color-scheme: dark)" srcset="docs/logo/o.svg"><img src="docs/logo/o_light.svg" alt="o" height="18"></picture>r
 
 **Build sudoku puzzles that a human can solve, and see exactly how.**
 
