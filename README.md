@@ -4,7 +4,7 @@
 
 **Build sudoku puzzles that a human can solve, and see exactly how.**
 
-[![Written in Duckling](https://img.shields.io/badge/written%20in-Duckling-f5c518)](https://github.com/topics/duckling-lang)
+[![Written in Duckling](https://img.shields.io/badge/written%20in-Duckling-f5c518)](https://github.com/ducktype-org/duckling)
 ![Platform](https://img.shields.io/badge/platform-Linux-informational)
 ![GUI](https://img.shields.io/badge/GUI-SDL2-1e88e5)
 
@@ -51,6 +51,9 @@ tar xzf duckling-dev-linux-x86_64.tar.gz
 
 The installer puts Duckling in `~/.local/share/duckling` and adds the `duck` command to your
 `PATH`. Open a new terminal afterwards. A `macos-arm64` package is also published.
+
+The project was last verified to build with `duckc 0.3-alpha (f49326c51 2026-11-20)`.
+Duckling source: <https://github.com/ducktype-org/duckling>.
 
 ### 2. SDL2
 
