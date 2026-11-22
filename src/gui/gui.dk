@@ -9,13 +9,14 @@ import example_dialog.ExampleDialog;
 import step_view.StepView;
 import SudokuCreator.creator.Creator;
 import SudokuCreator.creator.examples.*;
+import SudokuCreator.creator.generator.*;
 import SudokuCreator.sudoku_solver.units.CellCoord;
 
 # The windowed app.
 #
 # Editor: click or use the arrows to select a cell, 1-9 to enter a digit, 0, Backspace or Delete
 # to clear it, Esc to quit. Space browses the solver's steps (left/right, Esc returns).
-# L opens the example list (1-9 loads a board, Esc cancels).
+# L opens the example list (1-9 loads a board, R a random new one, Esc cancels).
 
 namespace Mode {
 	const Edit = 0;
@@ -53,11 +54,13 @@ class App {
 	selected: CellCoord = CellCoord(4, 4);
 	step: i64 = 0;
 	running: bool = true;
+	rng: Random;
 
 	# Starts by browsing the solution of the last example.
 	global fun create(screen: Canvas, fonts: ref Fonts) -> App = {
 		var app: App;
 		app.canvas = screen;
+		app.rng = Random.create(SDL_GetPerformanceCounter());
 		app.examples = example_boards();
 		app.editor = EditorView.create(screen, fonts.large, fonts.medium, fonts.small);
 		app.dialog = ExampleDialog.create(screen, fonts.large, fonts.medium, &app.examples);
@@ -113,6 +116,9 @@ class App {
 		if (SDLK_1 <= key <= SDLK_9) {
 			let i = (key - SDLK_1) as i64;
 			if (i < examples.length()) { creator.load(examples.at(i).board); }
+			mode = Mode.Edit;
+		} else if (key == SDLK_r) {
+			creator.load_puzzle(generate(&rng));
 			mode = Mode.Edit;
 		} else if (key == SDLK_ESCAPE) {
 			mode = Mode.Edit;

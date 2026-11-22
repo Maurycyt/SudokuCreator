@@ -4,13 +4,13 @@
     "version": "1.0.0",
     "features": [],
     "dependencies": [
-      "sdl2 local+file:///home/maurycyt/DuckType/SudokuCreator/sdl2"
+      "sdl2 local+file:///home/wojtekrz/ducktype/course/SudokuCreator/sdl2"
     ]
   },
   "dependencies": [
     {
       "name": "sdl2",
-      "source": "local+file:///home/maurycyt/DuckType/SudokuCreator/sdl2",
+      "source": "local+file:///home/wojtekrz/ducktype/course/SudokuCreator/sdl2",
       "version": "2.32.4",
       "features": [],
       "dependencies": []

@@ -1,0 +1,83 @@
+import SudokuCreator.sudoku_solver.partial_sudoku.PartialSudoku;
+import SudokuCreator.sudoku_solver.units.*;
+import SudokuCreator.sudoku_solver.SudokuSolver;
+
+# xorshift64: fast and good enough for shuffling boards.
+class Random {
+	state: u64;
+
+	# Any seed works; 0 (a fixed point of xorshift) is replaced.
+	global fun create(seed: u64) -> Random = Random(if seed == 0u64 then 0x9E3779B97F4A7C15u64 else seed);
+
+	fun next() -> u64 = {
+		state = state ^ (state << 13u64);
+		state = state ^ (state >> 7u64);
+		state = state ^ (state << 17u64);
+		return state;
+	}
+
+	# Uniform enough in 0..n-1 for small n.
+	fun below(n: i64) -> i64 = (next() % (n as u64)) as i64;
+
+	fun shuffle(values: ref i64[81], n: i64) = {
+		var i = n - 1;
+		while (i > 0) {
+			let j = below(i + 1);
+			let t = values[i];
+			values[i] = values[j];
+			values[j] = t;
+			i -= 1;
+		}
+	}
+}
+
+fun allowed(puzzle: ref PartialSudoku, c: CellCoord, digit: i64) -> bool = {
+	for (other in CELLS) {
+		if (c.sees(other) and puzzle.at(other) == digit) { return false; }
+	}
+	return true;
+}
+
+# Fills cells index..80 (row by row) with digits tried in random order.
+fun fill_from(puzzle: ref PartialSudoku, index: i64, rng: ref Random) -> bool = {
+	if (index == 81) { return true; }
+	let c = CellCoord(index / 9, index % 9);
+	var digits: i64[81];
+	var k = 0;
+	while (k < 9) { digits[k] = k + 1; k += 1; }
+	rng.shuffle(&digits, 9);
+	k = 0;
+	while (k < 9) {
+		if (allowed(puzzle, c, digits[k])) {
+			puzzle.at(c) = digits[k];
+			if (fill_from(puzzle, index + 1, rng)) { return true; }
+		}
+		k += 1;
+	}
+	puzzle.at(c) = 0;
+	return false;
+}
+
+fun solvable_by_strategies(puzzle: ref PartialSudoku) -> bool = {
+	var solver = SudokuSolver.create(puzzle);
+	return not solver.solve().stuck;
+}
+
+# A random sudoku the strategies solve. Starts from a random full grid and clears cells in random
+# order, keeping each removal only if the strategies still solve the board. Strategies make only
+# sound deductions, so a board they solve has exactly one solution.
+fun generate(rng: ref Random) -> PartialSudoku = {
+	var puzzle: PartialSudoku;
+	fill_from(&puzzle, 0, rng);
+	var order: i64[81];
+	var i = 0;
+	while (i < 81) { order[i] = i; i += 1; }
+	rng.shuffle(&order, 81);
+	for (index in order) {
+		let c = CellCoord(index / 9, index % 9);
+		let digit = puzzle.digits[c.row][c.col];  # a copy; `at` returns a reference
+		puzzle.at(c) = 0;
+		if (not solvable_by_strategies(&puzzle)) { puzzle.at(c) = digit; }
+	}
+	return puzzle;
+}

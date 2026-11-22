@@ -3,6 +3,7 @@ import core.containers.*;
 import core.optional.*;
 import SudokuCreator.creator.Creator;
 import SudokuCreator.creator.examples.*;
+import SudokuCreator.creator.generator.*;
 import SudokuCreator.multiset.*;
 import SudokuCreator.sudoku_solver.units.*;
 import SudokuCreator.sudoku_solver.SolveResult;
@@ -180,6 +181,25 @@ fun check_multiset() -> bool = {
 	return check(all_present and big.min().valueOr(-1) == 0 and big.max().valueOr(-1) == 100, "multiset stress") and ok;
 }
 
+# Generated boards are solved by the strategies and leave cells to fill in.
+fun check_generator() -> bool = {
+	var rng = Random.create(12345u64);
+	var ok = true;
+	var n = 0;
+	while (n < 3) {
+		var creator: Creator;
+		creator.load_puzzle(generate(&rng));
+		var empty = 0;
+		for (c in CELLS) {
+			if (creator.get(c) == 0) { empty += 1; }
+		}
+		print(f"generated board {n + 1}: {empty} empty, hardest strategy {hardest_strategy(&creator.result)}\n");
+		ok = check(not creator.result.stuck and empty > 40, "generated board not solved or too full") and ok;
+		n += 1;
+	}
+	return ok;
+}
+
 fun self_test() -> bool = {
 	var ok = check_multiset();
 	let examples = example_boards();
@@ -189,6 +209,7 @@ fun self_test() -> bool = {
 		i += 1;
 	}
 	ok = check_coverage(&examples) and ok;
+	ok = check_generator() and ok;
 	print(if ok then "ALL OK\n" else "SOME CHECKS FAILED\n");
 	return ok;
 }

@@ -21,7 +21,11 @@ class Creator {
 
 	# See PartialSudoku.parse for the format.
 	fun load(board: str) = {
-		puzzle = PartialSudoku.parse(board);
+		load_puzzle(PartialSudoku.parse(board));
+	}
+
+	fun load_puzzle(p: PartialSudoku) = {
+		puzzle = p;
 		analyze();
 	}
 

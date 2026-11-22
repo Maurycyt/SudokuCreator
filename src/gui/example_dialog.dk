@@ -4,10 +4,11 @@ import SudokuCreator.gui.graphics.*;
 import SudokuCreator.gui.board_view.*;
 import SudokuCreator.creator.examples.ExampleBoard;
 
-# Lists the example boards over the board area, one per key 1-9.
+# Lists the example boards over the board area, one per key 1-9, and the random game key.
 class ExampleDialog {
 	title: Text;
 	lines: Text[9];
+	random: Text;
 
 	global fun create(canvas: Canvas, large: cptr TTF_Font, medium: cptr TTF_Font, examples: ref List[ExampleBoard]) -> ExampleDialog = {
 		var v: ExampleDialog;
@@ -18,6 +19,7 @@ class ExampleDialog {
 			v.lines[i] = canvas.make_text(medium, f"{i + 1}: {name}", TEXT, (BOARD - 40) as u32);
 			i += 1;
 		}
+		v.random = canvas.make_text(medium, "R: random new game", TEXT, (BOARD - 40) as u32);
 		return v;
 	}
 
@@ -29,5 +31,6 @@ class ExampleDialog {
 			canvas.text(line, ORIGIN + 20, y);
 			y += line.h + 10;
 		}
+		canvas.text(random, ORIGIN + 20, y + 10);
 	}
 }
