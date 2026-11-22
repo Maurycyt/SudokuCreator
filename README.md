@@ -10,6 +10,11 @@
 
 </div>
 
+## Try it in the browser
+
+**[Open Sudoku Creator in your browser](https://maurycyt.github.io/SudokuCreator/)**, no install
+needed. It is the same app compiled to WebAssembly. Click the board once so it gets the keyboard.
+
 ## Overview
 
 Sudoku Creator is a desktop editor for designing sudoku puzzles. Its solver works like a person
